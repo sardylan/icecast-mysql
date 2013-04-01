@@ -1,0 +1,361 @@
+Icecast 2.3.2
+-----------------------------------------------------------------------------
+- Character set support.
+Most non-Ogg streams (eg MP3) send metadata as Latin1 but it could be in other
+character sets.  As icecast uses UTF-8, we need to convert to UTF-8 so that web
+pages and stream directories render correctly,
+  . Allow a per-mount <charset> setting.  For when source clients do not
+  indicate which character set is in use.
+  . a charset= parameter to the metadata request.
+  . Default for non-Ogg content is now Latin-1 (aka ISO-8859-1),  Ogg content
+  still use UTF-8.
+
+- Authentication
+  . Each mountpoint authentication is isolated so one mount authentication does
+  not slow another mountpoint authentication down.
+  . XSL pages can require authentication.
+  . Add some sanity checks for incorrect settings.
+
+- Listening socket update
+  . Allow multiple ports to be allocated which allow multiple shoutcast source
+  clients to stream on the same icecast instance.
+  . No internal limit on the number of listen-sockets that can be used.
+  . Allow for a listen-socket to be marked SSL capable. While any client could
+  connect on these, the idea is really for /admin requests.
+  . allow for a <listen-socket> to bind to ipv4 and ipv6. BSDs may require to
+  the use of bind-address.
+
+- XSL update
+  . XSL pages include an xspf link for non-auth streams.
+  . XSL pages in both webroot and adminroot can take a mount= arg to limit
+  which stats are transformed.
+  . XSL files can specify the content-type to return to the client. It is no
+  longer fixed to html
+
+- Updates for stream directory handling.
+  . A stream is not registered with the directory until after the first minute
+  has passed. some streams have been stuck in a connect/disconnect loop.
+  . Increase retry time on failure, if the stream add is rejected then it will
+  be down to a misconfiguration so a long retry delay is performed.
+  . A YP server that is not responding is ignored for a while
+
+- Updates for Win32
+  . Build cleanups,
+  . Newer versions of dependency libs (libxml2/libxslt/libcurl etc)
+  . buffer overflow fixes when many streams are active
+
+- Accept/Ban IP support.
+Now takes filenames for explicitly accepting or denying requests from specified
+IP addresses.  Useful in cases where firewall access is not available.  The
+files, if defined, are re-read automatically if updated.
+
+- A Mountpoint is exported to the slaves even if no mount section is defined for
+it. You can still use the hidden setting to prevent that from happening.
+
+- Relays handle redirection (HTTP 302) if one is received at startup.
+
+- Automatically generate XSPF playlist like we do with M3U, the mountpoint
+extension is .xspf 
+
+- Header updates for proxy handling and certain clients like some shoutcast
+source clients and flash players.
+
+- Added Kate/Skeleton codecs to Ogg handler.
+
+- Various stats cleanups. Added some global stats (server ID, email contact etc).
+
+- Documentation updates.
+
+- The streamlist passed from master to slave had a limited length, so if there
+were many streams then some could of been left out.
+
+- Relay startup/shutdown is cleaner.
+
+- several build cleanups.
+
+- several resource leaks and race conditions fixed
+
+
+Icecast 2.3.1
+-----------------------------------------------------------------------------
+
+- new tag <logsize> in <logging> state the trigger size (in KB) for cycling the
+log files.
+
+- new tag <logarchive> in <logging> enable (1) if you want to use a timestamp
+for an extension when cycling logs. 
+
+- Handling of certain shoutcast source clients is fixed, this typically
+affected NSV source clients
+
+- A race in source shutdown when listeners are authenticated could lead to
+server crash
+
+- An audio glitch was possible in playback of vorbis streams when a new logical
+stream started (eg metadata update).
+
+- stats speedup. Processing large numbers of stats was slow. Typically only
+seen when using lots of streams on the same server.
+
+- 404 responses were being sent back in some places, now 403 is sent back.
+
+- Auth URL now handles the authentication to scripts better.
+  The order in which username/password are selected is
+  1. url is http://user:pass@host:port/....
+  2. <param name="username"> and <param name="password">
+  3. with listener_add/remove, listener supplied username/password is used.
+
+- A streams intro file can now be changed, using HUP, on active streams.
+
+- mount without a name crashed the server
+
+- Various documentation updates
+
+
+Icecast 2.3 
+-----------------------------------------------------------------------------
+**** New features for 2.3.0 ****
+
+- Streaming support for ogg speex, ogg flac, ogg midi
+
+- intro file support - per mount settable
+   Intro files will play when a listener first connects to a stream.  This
+   is designed for station jingles and the like.  If you don't broadcast 
+   in ogg vorbis, you must make sure the bitrate/samplerate/number of 
+   channels match up to your stream.
+
+- on-demand relays, global and per-relay settable
+   On demand relays only connect to the relayed content when there are
+   listeners attached to the relay.  This can save bandwidth in certain cases.
+
+- fallback to file, extends on the intro file handling.
+   With this feature, you can specify a "fallback file" which will be played
+   in a loop and sent your currently connected listeners in the event of a
+   source client disconnect.  This means your listeners stay connected while
+   you fix your disconnect problem.  Same rules regarding bitrate/samplerate/
+   number of channels apply as with intro files.
+
+- new mount-level settings
+   1. public, type/subtype, genre settings, stream description,
+      stream url, stream name, bitrate (override what is sent from the source
+      client)
+   2. mp3 metadata interval
+   3. on-[dis]connect scripts can be stated per-mount, invoked at source 
+      start/stop and take 1 arg which is the mountpoint.
+
+- New URL listener authenticator.
+   This delegates your listener authorization to an external application.
+   URL calls are made on listener connect/disconnect as well as source
+   connect/disconnect.  It is meant for large broadcasters who have existing
+   authentication systems that need to be integrated into.  Included is 
+   an example php-based application that can be used in conjunction with 
+   the url authenticator to manage a simple subscription-based broadcast.
+
+- HTPasswd authenticator uses in-memory structures now.
+
+- On demand files now can be fed through an authenticator
+
+- Update to admin/web xslt interface
+
+- Icecast can now be installed as a win32 service
+
+**** Fixes for 2.3.0 ****
+- real/helix works
+- win32 access log correct
+- stats client is stable now (curl -X STATS http://admin@host:port/)
+- show mountpoints on stats that are inactive but have an active fallback
+- more updates over HUP possible
+- improved stability under heavy load
+- moving clients will no longer sometimes deadlock the server
+- avoid small writes to reduce TCP overhead.
+
+
+Icecast 2.2 
+-----------------------------------------------------------------------------
+****New features for 2.2 (in no particular order):****
+
+- Theora Video support -
+Icecast now supports video streaming via theora.  Currently, we require the latest
+(alpha 4) version of libtheora.  This is an optional compile, so if you don't
+have theora then icecast will safely ignore it
+
+- Shoutcast style source client support -
+Icecast now supports the connection protocol used by the Shoutcast DSP source
+client.  This is the same connection protocol used by their NSV encoding tools.
+This means that not only can you use the Shoutcast DSP to stream to icecast, but
+that you can also stream NSV via their tools.
+
+- AAC is added as a supported streaming format -
+Not too many source clients support streaming in this format, but we support it.
+
+- Cluster password -
+Now you can specify a cluster password as a <mount> option in the config. This
+will allow you to cluster multiple servers/mounts into a single listing on the 
+stream directory.  Note that this is different than "grouping" which groups together
+streams coming from the same physical IP and with the same stream name.  Clusters
+are meant for relays of the same stream and will only be listed *once* in the stream
+directory.  When a listener tunes into a cluster, they will be served an m3u file
+with all the clusters for that stream.
+
+- Playlist Log -
+This is an option setting that will create an audit trail of metadata that comes through
+icecast.  It is a single file that contains information for all mountpoints.
+
+- Range Support for static files -
+We now support seeking in files served off the icecast fserve.
+
+- Metadata Update via Admin -
+We now support metadata updates via the admin interface for both MP3 AND Ogg Vorbis
+streams.
+
+- Per mount hidden stats and YP prevention -
+You many now indicate certains mounts to be excluded (i.e. hidden) from the main
+status.xsl page.  This is useful when using local private relays.  You can also
+override the YP setting (as in disable) on a per-mount basis.  Also useful for
+local private relays.
+
+- Multiple example config files -
+We now have multiple config files for you to use as a base.  A "simple" one for 
+quick-start, and a more detailed "advanced" one with all the features, as well
+as a "shoutcast compatable" one, which shows how you'd config for using the
+shoutcast DSP.
+
+- Relay user/pass -
+You can now specify authentication used by a relay.  This is for the case where
+you have listener authentication enabled for a mountpoint, and want to connect
+a relay to it.
+
+Icecast 2.1 11/04/2004
+-----------------------------------------------------------------------------
+****New features for 2.1 (in no particular order):****
+
+-Listener Authentication-
+
+  Icecast now supports listener authentication.  This provides a mechanism for
+  creating/maintaining users and passwords for listeners.  Currently, we only
+  have implemented a simple, file-based storage for users and passwords.  New
+  authenticators are on the horizon (such as URL-based or possibly MySQL based)
+  New admin pages were also added for the maintenance of users/passwords. Please
+  check the docs for a more detailed description of this new feature.
+
+-Multi-Level Fallbacks-
+ 
+  Multi-level fallbacks allow for specifications of a series of fallback mounts
+  that you can use to automatically move listeners in the event of a source being
+  disconnected.  In the event of new listeners attaching to the source stream that has
+  been disconnected, they are routed to the fallback mount (if specified).
+  Icecast now has fallback-override capability as well which means that in the event
+  of a source stream failure, listeners are moved to the fallback mount, and then
+  automatically recaptured when the original source stream returns.
+
+-Burst-On-Connect-
+
+  This is an new, optional config setting which will send a initial burst of 
+  data to connecting listeners.  This has the effect of reducing 
+  (significantly) the startup buffer latency from the end-user perspective.  
+  This option is enabled by default.
+
+
+****New Enhancements for 2.1****
+
+-Update to admin interface-
+
+  This interface has been cleaned up quite a bit and made a bit nicer.
+
+-Rewrite of the YP listing code-
+
+  The icecast yp code has received a complete overhaul by karl, and it's a much
+  more stable and failure-resistant implementation.
+
+-Lots and lots of bugs fixed-
+
+  Check the ChangeLog for a complete list of these...
+
+-----------------------------------------------------------------------------
+2003-10-12
+    Added documentation
+
+2003-04-23
+    Support aliases
+
+2003-03-09
+    Support listening on multiple sockets.
+
+2003-03-08
+    Support for shoutcast source protocol added.
+
+2003-03-08
+    Started implementing generic admin interface. Supports (so far): 
+    - dynamic configuration of mount fallbacks
+        /admin/fallbacks?mount=/mount&fallback=/fallback
+    - setting of mp3 metadata
+        /admin/metadata?mount=/mount&mode=updinfo&song=New%20Title
+    - dumping raw xml stats
+        /admin/rawstats
+    - listing all connected clients on a mountpoint: 
+        /admin/listclients?mount=/mountname
+
+2003-03-05
+    Implemented the ability to reread the config file on SIGHUP. For now, this
+    does not affect configuration for currently running sources (only new
+    sources and global parameters like max-listeners)
+
+2003-03-02 
+    More features:	 
+    -- per mountpoint listener maxima   
+    -- static configuration of mountpoint fallbacks   
+    -- stream dumping (write incoming stream to disk)
+
+2003-02-27
+    Fix log buffering on win32 - previously, logs were never flushed, so they
+    only got output every few tens or hundreds of lines.
+
+2003-02-27
+	Support new icy-audio-info header, to communicate various parameters to
+    clients and yp servers, including sample rate, quality, channels, bitrate
+
+2003-02-25
+    Full support for relaying mp3 metadata (if turned on in config file)
+
+2003-02-25
+    Allow configuration of maximum client queue length (in bytes)
+
+2003-02-14
+    Finished full IPv6 support. 
+
+2003-02-12
+	Allow configuring local mountpoint seperately from remote mountpoint for
+    relays
+
+2003-02-12
+	Per mountpoint usernames and passwords (for sources)
+
+2003-02-11
+	Now that it's been officially assigned, use application/ogg instead of
+	application/x-ogg
+
+2003-02-07
+    Allow relaying of mp3 streams from icecast 1.x and shoutcast
+
+2003-02-07
+    Added ability to configure individual relays (rather than just all streams
+    from a single server).
+
+2003-02-03
+    Added support for YP directory services listings
+	are only used by the yp listing routines
+
+2003-02-03
+    Support command line parameter -b to run in the background (not supported
+    on win32)
+
+2002-12-31 
+    Implement configurable mountpoint fallbacks (on source exit, clients are
+    transferred to another mountpoint automatically, without disconnecting
+    them)
+
+2002-12-31
+    Implemented full mp3 metadata support.
+
+(older stuff is missing from here)
+
