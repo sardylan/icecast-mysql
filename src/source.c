@@ -52,6 +52,8 @@
 #include "auth.h"
 #include "compat.h"
 
+#include "mysqlstats.h"
+
 #undef CATMODULE
 #define CATMODULE "source"
 
@@ -737,6 +739,7 @@ void source_main (source_t *source)
                 client_node = avl_get_next(client_node);
                 if (client->respcode == 200)
                     stats_event_dec (NULL, "listeners");
+                mysqlStatsDisconnect(client->con->id, client->con->con_time, client->con->discon_time);
                 avl_delete(source->client_tree, (void *)client, _free_client);
                 source->listeners--;
                 DEBUG0("Client removed");
@@ -749,6 +752,8 @@ void source_main (source_t *source)
         client_node = avl_get_first(source->pending_tree);
         while (client_node) {
 
+            client = (client_t *) client_node->key;
+
             if(source->max_listeners != -1 && 
                     source->listeners >= (unsigned long)source->max_listeners) 
             {
@@ -757,7 +762,7 @@ void source_main (source_t *source)
                  * and doesn't give the listening client any information about
                  * why they were disconnected
                  */
-                client = (client_t *)client_node->key;
+                //client = (client_t *)client_node->key; // Moved after the if statement
                 client_node = avl_get_next(client_node);
                 avl_delete(source->pending_tree, (void *)client, _free_client);
 
@@ -767,6 +772,7 @@ void source_main (source_t *source)
             }
             
             /* Otherwise, the client is accepted, add it */
+            mysqlStatsConnect(client->con->id, client->con->con_time, client->con->ip, (char *) httpp_getvar(client->parser, "user-agent"), source->mount);
             avl_insert(source->client_tree, client_node->key);
 
             source->listeners++;

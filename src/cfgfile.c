@@ -58,6 +58,14 @@
 #define CONFIG_YP_URL_TIMEOUT 10
 #define CONFIG_DEFAULT_CIPHER_LIST "ALL:!aNULL:!ADH:!eNULL:!LOW:!EXP:RC4+RSA:+HIGH:+MEDIUM"
 
+// Defining default values for MySQL Stats
+#define CONFIG_DEFAULT_MYSQLSTATS_ENABLED 1
+#define CONFIG_DEFAULT_MYSQLSTATS_SERVER "127.0.0.1"
+#define CONFIG_DEFAULT_MYSQLSTATS_PORT 3306
+#define CONFIG_DEFAULT_MYSQLSTATS_USER "icecast"
+#define CONFIG_DEFAULT_MYSQLSTATS_PSW "icecast"
+#define CONFIG_DEFAULT_MYSQLSTATS_DBNAME "icecast"
+
 #ifndef _WIN32
 #define CONFIG_DEFAULT_BASE_DIR "/usr/local/icecast"
 #define CONFIG_DEFAULT_LOG_DIR "/usr/local/icecast/logs"
@@ -89,6 +97,7 @@ static void _parse_mount(xmlDocPtr doc, xmlNodePtr node, ice_config_t *c);
 static void _parse_listen_socket(xmlDocPtr doc, xmlNodePtr node, 
         ice_config_t *c);
 static void _add_server(xmlDocPtr doc, xmlNodePtr node, ice_config_t *c);
+static void _parse_mysqlstats(xmlDocPtr doc, xmlNodePtr node, ice_config_t *c);
 
 static void create_locks(void) {
     thread_mutex_create(&_locks.relay_lock);
@@ -382,7 +391,15 @@ static void _set_defaults(ice_config_t *configuration)
     configuration->relay_username = (char *)xmlCharStrdup (CONFIG_DEFAULT_MASTER_USERNAME);
     configuration->relay_password = NULL;
     /* default to a typical prebuffer size used by clients */
-    configuration->burst_size = CONFIG_DEFAULT_BURST_SIZE;
+   configuration->burst_size = CONFIG_DEFAULT_BURST_SIZE;
+
+    // Setting default values for MySQL Stats
+    configuration->mysql_stats_enabled = CONFIG_DEFAULT_MYSQLSTATS_ENABLED;
+    configuration->mysql_stats_server = (char *) xmlCharStrdup(CONFIG_DEFAULT_MYSQLSTATS_SERVER);
+    configuration->mysql_stats_port = CONFIG_DEFAULT_MYSQLSTATS_PORT;
+    configuration->mysql_stats_user = (char *) xmlCharStrdup(CONFIG_DEFAULT_MYSQLSTATS_USER);
+    configuration->mysql_stats_psw = (char *) xmlCharStrdup(CONFIG_DEFAULT_MYSQLSTATS_PSW);
+    configuration->mysql_stats_dbname = (char *) xmlCharStrdup(CONFIG_DEFAULT_MYSQLSTATS_DBNAME);
 }
 
 static void _parse_root(xmlDocPtr doc, xmlNodePtr node, 
@@ -483,6 +500,8 @@ static void _parse_root(xmlDocPtr doc, xmlNodePtr node,
             _parse_logging(doc, node->xmlChildrenNode, configuration);
         } else if (xmlStrcmp (node->name, XMLSTR("security")) == 0) {
             _parse_security(doc, node->xmlChildrenNode, configuration);
+        } else if (xmlStrcmp (node->name, XMLSTR("mysqlstats")) == 0) {
+            _parse_mysqlstats(doc, node->xmlChildrenNode, configuration);
         }
     } while ((node = node->next));
 
@@ -1082,6 +1101,55 @@ static void _parse_security(xmlDocPtr doc, xmlNodePtr node,
        }
    } while ((node = node->next));
 }
+
+
+/**
+ * Funtion to parse config file params for MySQL Stats
+ */
+
+static void _parse_mysqlstats(xmlDocPtr doc, xmlNodePtr node, ice_config_t *configuration)
+{
+    char *tmp;
+    xmlNodePtr oldnode;
+
+    do {
+        if(node == NULL)
+            break;
+
+        if(xmlIsBlankNode(node))
+            continue;
+
+        if(xmlStrcmp(node->name, XMLSTR("enabled")) == 0) {
+            tmp = (char *) xmlNodeListGetString(doc, node->xmlChildrenNode, 1);
+            configuration->mysql_stats_enabled = atoi(tmp);
+            if(tmp)
+                xmlFree(tmp);
+        } else if(xmlStrcmp(node->name, XMLSTR("server")) == 0) {
+            if(configuration->mysql_stats_server)
+                xmlFree(configuration->mysql_stats_server);
+            configuration->mysql_stats_server = (char *) xmlNodeListGetString(doc, node->xmlChildrenNode, 1);
+        } else if(xmlStrcmp(node->name, XMLSTR("port")) == 0) {
+            tmp = (char *) xmlNodeListGetString(doc, node->xmlChildrenNode, 1);
+            configuration->mysql_stats_port = atoi(tmp);
+            if(tmp)
+                xmlFree(tmp);
+        } else if(xmlStrcmp(node->name, XMLSTR("user")) == 0) {
+            if(configuration->mysql_stats_user)
+                xmlFree(configuration->mysql_stats_user);
+            configuration->mysql_stats_user = (char *) xmlNodeListGetString(doc, node->xmlChildrenNode, 1);
+        } else if(xmlStrcmp(node->name, XMLSTR("psw")) == 0) {
+            if(configuration->mysql_stats_psw)
+                xmlFree(configuration->mysql_stats_psw);
+            configuration->mysql_stats_psw = (char *) xmlNodeListGetString(doc, node->xmlChildrenNode, 1);
+        } else if(xmlStrcmp(node->name, XMLSTR("dbname")) == 0) {
+            if(configuration->mysql_stats_dbname)
+                xmlFree(configuration->mysql_stats_dbname);
+            configuration->mysql_stats_dbname = (char *) xmlNodeListGetString(doc, node->xmlChildrenNode, 1);
+        }
+
+    } while ((node = node->next));
+}
+
 
 static void _add_server(xmlDocPtr doc, xmlNodePtr node, 
         ice_config_t *configuration)
