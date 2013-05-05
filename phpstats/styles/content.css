@@ -1,0 +1,12 @@
+@charset "UTF-8";
+
+div#resp_text {
+    float: left;
+    width: 20%;
+}
+
+div#resp_graph {
+    float: right;
+    width: 80%;
+    text-align: center;
+}

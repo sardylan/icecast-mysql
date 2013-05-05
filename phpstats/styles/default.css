@@ -1,0 +1,137 @@
+@charset "UTF-8";
+
+body {
+    background-color: rgb(255, 255, 255);
+    margin: 0px;
+    width:100%;
+}
+
+div#page {
+    width: 90%;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+div#header {
+    height: 5px;
+    width: 100%;
+}
+
+div#logo {
+    float: left;
+    width: 250px;
+}
+
+div#title {
+    float: left;
+}
+
+div#searchmounts {
+    height: 90px;
+    border-style: solid;
+    border-width: 2px;
+    border-color: rgb(220, 220, 220);
+    border-radius: 15px;
+    -moz-border-radius: 15px;
+    padding-left: 15px;
+    padding-right: 15px;
+}
+
+div#searchmounts div {
+    padding-top: 10px;
+    padding-left: 5px;
+    padding-right: 5px;
+}
+
+div.searchmounts_list {
+    float: left;
+}
+
+div.searchmounts_button {
+    float: left;
+}
+div#searchmounts_label {
+    font-family: serif;
+    font-size: 20px;
+    float: left;
+}
+div#searchseparator {
+    height: 3px;
+}
+
+div#search {
+    height: 45px;
+    border-style: solid;
+    border-width: 2px;
+    border-color: rgb(220, 220, 220);
+    border-radius: 15px;
+    -moz-border-radius: 15px;
+    padding-left: 15px;
+    padding-right: 15px;
+}
+
+div.search_button {
+    float: left;
+    padding-top: 10px;
+    padding-left: 0px;
+    padding-right: 0px;
+}
+
+div#search_label {
+    font-family: serif;
+    font-size: 20px;
+    float: left;
+    padding-top: 10px;
+    padding-left: 5px;
+    padding-right: 5px;
+}
+
+div#search_interval {
+    float: right;
+    padding-top: 10px;
+    padding-left: 5px;
+    padding-right: 5px;
+}
+
+div#rulerspace {
+    height: 40px;
+}
+
+div#footer {
+    position: fixed;
+    width: 100%;
+    height: 30px;
+    bottom: 0px;
+    margin-top: auto;
+    background-color: rgb(200, 200, 200);
+    font-size: 12px;
+    font-family: serif;
+}
+
+div.divclear {
+    clear: both;
+}
+
+div.footer-element-left {
+    margin-top: 8px;
+    margin-bottom: 8px;
+    margin-left: 15px;
+    margin-right: 15px;
+    float: left;
+}
+
+div.footer-element-right {
+    margin-top: 8px;
+    margin-bottom: 8px;
+    margin-left: 15px;
+    margin-right: 15px;
+    float: right;
+}
+
+input.interval {
+    width: 110px;
+}
+
+span.res_summary {
+    font-weight: bold;
+}
