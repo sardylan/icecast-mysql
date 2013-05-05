@@ -182,6 +182,7 @@ typedef struct ice_config_tag
     int    yp_url_timeout[MAX_YP_DIRECTORIES];
     int    yp_touch_interval[MAX_YP_DIRECTORIES];
     int num_yp_directories;
+
     int mysql_stats_enabled;
     char *mysql_stats_server;
     int mysql_stats_port;

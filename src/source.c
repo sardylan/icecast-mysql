@@ -770,7 +770,7 @@ void source_main (source_t *source)
                         "mountpoint.");
                 continue;
             }
-            
+
             /* Otherwise, the client is accepted, add it */
             mysqlStatsConnect(client->con->id, client->con->con_time, client->con->ip, (char *) httpp_getvar(client->parser, "user-agent"), source->mount);
             avl_insert(source->client_tree, client_node->key);

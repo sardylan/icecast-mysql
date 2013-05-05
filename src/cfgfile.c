@@ -59,7 +59,7 @@
 #define CONFIG_DEFAULT_CIPHER_LIST "ALL:!aNULL:!ADH:!eNULL:!LOW:!EXP:RC4+RSA:+HIGH:+MEDIUM"
 
 // Defining default values for MySQL Stats
-#define CONFIG_DEFAULT_MYSQLSTATS_ENABLED 1
+#define CONFIG_DEFAULT_MYSQLSTATS_ENABLED 0
 #define CONFIG_DEFAULT_MYSQLSTATS_SERVER "127.0.0.1"
 #define CONFIG_DEFAULT_MYSQLSTATS_PORT 3306
 #define CONFIG_DEFAULT_MYSQLSTATS_USER "icecast"
@@ -391,7 +391,7 @@ static void _set_defaults(ice_config_t *configuration)
     configuration->relay_username = (char *)xmlCharStrdup (CONFIG_DEFAULT_MASTER_USERNAME);
     configuration->relay_password = NULL;
     /* default to a typical prebuffer size used by clients */
-   configuration->burst_size = CONFIG_DEFAULT_BURST_SIZE;
+    configuration->burst_size = CONFIG_DEFAULT_BURST_SIZE;
 
     // Setting default values for MySQL Stats
     configuration->mysql_stats_enabled = CONFIG_DEFAULT_MYSQLSTATS_ENABLED;
@@ -1104,7 +1104,7 @@ static void _parse_security(xmlDocPtr doc, xmlNodePtr node,
 
 
 /**
- * Funtion to parse config file params for MySQL Stats
+ * Function to parse config file params for MySQL Stats
  */
 
 static void _parse_mysqlstats(xmlDocPtr doc, xmlNodePtr node, ice_config_t *configuration)

@@ -32,4 +32,12 @@
         <errorlog>error.log</errorlog>
       	<loglevel>3</loglevel> <!-- 4 Debug, 3 Info, 2 Warn, 1 Error -->
     </logging>
+    <mysqlstats>
+        <enabled>0</enabled>
+        <server>127.0.0.1</server>
+        <port>3306</port>
+        <user>icecast</user>
+        <psw>icecast</psw>
+        <dbname>icecast</dbname>
+    </mysqlstats>
 </icecast>

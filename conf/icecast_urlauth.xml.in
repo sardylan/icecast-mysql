@@ -44,4 +44,12 @@
     <security>
         <chroot>0</chroot>
     </security>
+    <mysqlstats>
+        <enabled>0</enabled>
+        <server>127.0.0.1</server>
+        <port>3306</port>
+        <user>icecast</user>
+        <psw>icecast</psw>
+        <dbname>icecast</dbname>
+    </mysqlstats>
 </icecast>

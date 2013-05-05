@@ -63,6 +63,8 @@
 #include "yp.h"
 #include "auth.h"
 
+#include "mysqlstats.h"
+
 #include <libxml/xmlmemory.h>
 
 #undef CATMODULE
@@ -509,7 +511,11 @@ int main(int argc, char **argv)
     slave_initialize();
     auth_initialise ();
 
+    mysqlStatsDBOpen();
+
     _server_proc();
+
+    mysqlStatsDBClose();
 
     INFO0("Shutting down");
 #if !defined(_WIN32) || defined(_CONSOLE)
@@ -523,5 +529,3 @@ int main(int argc, char **argv)
 
     return 0;
 }
-
-
