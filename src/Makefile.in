@@ -329,9 +329,9 @@ icecast_DEPENDENCIES = @ICECAST_OPTIONAL@ net/libicenet.la thread/libicethread.l
     httpp/libicehttpp.la log/libicelog.la avl/libiceavl.la timing/libicetiming.la
 
 icecast_LDADD = $(icecast_DEPENDENCIES) @XIPH_LIBS@ @KATE_LIBS@
-AM_CFLAGS = -pthread @XIPH_CFLAGS@
+AM_CFLAGS = @MYSQL_CLIENT_CFLAGS@ @XIPH_CFLAGS@
 AM_CPPFLAGS = @XIPH_CPPFLAGS@
-AM_LDFLAGS = -pthread @XIPH_LDFLAGS@ @KATE_LIBS@
+AM_LDFLAGS = @MYSQL_CLIENT_LIBS@ @XIPH_LDFLAGS@ @KATE_LIBS@
 all: all-recursive
 
 .SUFFIXES:

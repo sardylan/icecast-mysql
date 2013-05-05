@@ -11780,6 +11780,8 @@ fi
 $as_echo "$mysql_version" >&6; }
 
 
+
+
 DEBUG="-g"
 if test -z "$GCC"; then
     XIPH_CPPFLAGS="-D_REENTRANT"
