@@ -8,6 +8,7 @@
  *                      oddsock <oddsock@xiph.org>,
  *                      Karl Heyes <karl@xiph.org>
  *                      and others (see AUTHORS for details).
+ * Copyright 2011-2012, Philipp "ph3-der-loewe" Schafft <lion@lion.leolix.org>,
  */
 
 /* -*- c-basic-offset: 4; indent-tabs-mode: nil; -*- */
@@ -41,9 +42,13 @@
 #include "net/resolver.h"
 #include "httpp/httpp.h"
 
-#ifdef CHUID
+#if HAVE_SYS_TYPES_H
 #include <sys/types.h>
+#endif
+#if HAVE_GRP_H
 #include <grp.h>
+#endif
+#if HAVE_PWD_H
 #include <pwd.h>
 #endif
 
@@ -73,7 +78,7 @@
 static int background;
 static char *pidfile = NULL;
 
-static void _fatal_error(char *perr)
+static void _fatal_error(const char *perr)
 {
 #ifdef WIN32_SERVICE
     MessageBox(NULL, perr, "Error", MB_SERVICE_NOTIFICATION);
@@ -87,11 +92,12 @@ static void _fatal_error(char *perr)
 static void _print_usage(void)
 {
     printf("%s\n\n", ICECAST_VERSION_STRING);
-    printf("usage: icecast [-b -v] -c <file>\n");
+    printf("usage: icecast [-b] -c <file>\n");
+    printf("or   : icecast {-v|--version}\n");
     printf("options:\n");
-    printf("\t-c <file>\tSpecify configuration file\n");
-    printf("\t-v\t\tDisplay version info\n");
-    printf("\t-b\t\tRun icecast in the background\n");
+    printf("\t-c <file>       Specify configuration file\n");
+    printf("\t-v or --version Display version info\n");
+    printf("\t-b              Run icecast in the background\n");
     printf("\n");
 }
 
@@ -172,7 +178,7 @@ static int _parse_config_opts(int argc, char **argv, char *filename, int size)
             background = 1;
 #endif
         }
-        if (strcmp(argv[i], "-v") == 0) {
+        if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
             fprintf(stdout, "%s\n", ICECAST_VERSION_STRING);
             exit(0);
         }
@@ -338,7 +344,7 @@ static void _server_proc(void)
 static void _ch_root_uid_setup(void)
 {
    ice_config_t *conf = config_get_config_unlocked();
-#ifdef CHUID
+#ifdef HAVE_SETUID
    struct passwd *user;
    struct group *group;
    uid_t uid=-1;
@@ -364,7 +370,7 @@ static void _ch_root_uid_setup(void)
    }
 #endif
 
-#ifdef CHROOT
+#if HAVE_CHROOT
    if (conf->chroot)
    {
        if(getuid()) /* root check */
@@ -382,7 +388,7 @@ static void _ch_root_uid_setup(void)
 
    }   
 #endif
-#ifdef CHUID
+#if HAVE_SETUID
 
    if(conf->chuid)
    {
@@ -392,14 +398,14 @@ static void _ch_root_uid_setup(void)
            return;
        }
 
-       if(gid != -1) {
+       if(gid != (gid_t)-1) {
            if(!setgid(gid))
                fprintf(stdout, "Changed groupid to %i.\n", (int)gid);
            else
                fprintf(stdout, "Error changing groupid: %s.\n", strerror(errno));
        }
 
-       if(uid != -1) {
+       if(uid != (uid_t)-1) {
            if(!setuid(uid))
                fprintf(stdout, "Changed userid to %i.\n", (int)uid);
            else
@@ -424,7 +430,7 @@ int main(int argc, char **argv)
     */
     res = _parse_config_opts(argc, argv, filename, 512);
     if (res == 1) {
-#if !defined(_WIN32) || defined(_CONSOLE)
+#if !defined(_WIN32) || defined(_CONSOLE) || defined(__MINGW32__) || defined(__MINGW64__)
         /* startup all the modules */
         initialize_subsystems();
 #endif
@@ -451,7 +457,7 @@ int main(int argc, char **argv)
                 _fatal_error("XML config parsing error");
                 break;
             }
-#if !defined(_WIN32) || defined(_CONSOLE)
+#if !defined(_WIN32) || defined(_CONSOLE) || defined(__MINGW32__) || defined(__MINGW64__)
             shutdown_subsystems();
 #endif
             return 1;
@@ -476,7 +482,7 @@ int main(int argc, char **argv)
     stats_initialize(); /* We have to do this later on because of threading */
     fserve_initialize(); /* This too */
 
-#ifdef CHUID 
+#ifdef HAVE_SETUID 
     /* We'll only have getuid() if we also have setuid(), it's reasonable to
      * assume */
     if(!getuid()) /* Running as root! Don't allow this */
@@ -518,7 +524,7 @@ int main(int argc, char **argv)
     mysqlStatsDBClose();
 
     INFO0("Shutting down");
-#if !defined(_WIN32) || defined(_CONSOLE)
+#if !defined(_WIN32) || defined(_CONSOLE) || defined(__MINGW32__) || defined(__MINGW64__)
     shutdown_subsystems();
 #endif
     if (pidfile)
@@ -529,3 +535,5 @@ int main(int argc, char **argv)
 
     return 0;
 }
+
+

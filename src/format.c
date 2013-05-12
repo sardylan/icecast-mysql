@@ -40,6 +40,7 @@
 
 #include "format_ogg.h"
 #include "format_mp3.h"
+#include "format_ebml.h"
 
 #include "logging.h"
 #include "stats.h"
@@ -64,9 +65,21 @@ format_type_t format_get_type (const char *contenttype)
         return FORMAT_TYPE_OGG;
     else if(strcmp(contenttype, "video/ogg") == 0)
         return FORMAT_TYPE_OGG;
+    else if(strcmp(contenttype, "audio/webm") == 0)
+        return FORMAT_TYPE_EBML;
+    else if(strcmp(contenttype, "video/webm") == 0)
+        return FORMAT_TYPE_EBML;
+    else if(strcmp(contenttype, "audio/x-matroska") == 0)
+        return FORMAT_TYPE_EBML;
+    else if(strcmp(contenttype, "video/x-matroska") == 0)
+        return FORMAT_TYPE_EBML;
+    else if(strcmp(contenttype, "video/x-matroska-3d") == 0)
+        return FORMAT_TYPE_EBML;
     else
         /* We default to the Generic format handler, which
-           can handle many more formats than just mp3 */
+           can handle many more formats than just mp3.
+	   Let's warn that this is not well supported */
+	WARN1("Unsupported or legacy stream type: \"%s\". Falling back to generic minimal handler for best effort.", contenttype);
         return FORMAT_TYPE_GENERIC;
 }
 
@@ -77,6 +90,9 @@ int format_get_plugin(format_type_t type, source_t *source)
     switch (type) {
     case FORMAT_TYPE_OGG:
         ret = format_ogg_get_plugin (source);
+        break;
+    case FORMAT_TYPE_EBML:
+        ret = format_ebml_get_plugin (source);
         break;
     case FORMAT_TYPE_GENERIC:
         ret = format_mp3_get_plugin (source);
@@ -278,14 +294,12 @@ static int format_prepare_headers (source_t *source, client_t *client)
     int bytes;
     int bitrate_filtered = 0;
     avl_node *node;
-    ice_config_t *config;
 
     remaining = client->refbuf->len;
     ptr = client->refbuf->data;
     client->respcode = 200;
 
-    bytes = snprintf (ptr, remaining, "HTTP/1.0 200 OK\r\n"
-            "Content-Type: %s\r\n", source->format->contenttype);
+    bytes = util_http_build_header (ptr, remaining, 0, 0, 200, NULL, source->format->contenttype, NULL, NULL);
 
     remaining -= bytes;
     ptr += bytes;
@@ -321,7 +335,22 @@ static int format_prepare_headers (source_t *source, client_t *client)
             if (strcasecmp(var->name, "ice-password") &&
                 strcasecmp(var->name, "icy-metaint"))
             {
-                if (!strncasecmp("ice-", var->name, 4))
+		if (!strcasecmp(var->name, "ice-name"))
+		{
+		    ice_config_t *config;
+		    mount_proxy *mountinfo;
+
+		    config = config_get_config();
+		    mountinfo = config_find_mount (config, source->mount, MOUNT_TYPE_NORMAL);
+
+		    if (mountinfo && mountinfo->stream_name)
+		        bytes = snprintf (ptr, remaining, "icy-name:%s\r\n", mountinfo->stream_name);
+                    else
+		        bytes = snprintf (ptr, remaining, "icy-name:%s\r\n", var->value);
+
+                    config_release_config();
+		}
+                else if (!strncasecmp("ice-", var->name, 4))
                 {
                     if (!strcasecmp("ice-public", var->name))
                         bytes = snprintf (ptr, remaining, "icy-pub:%s\r\n", var->value);
@@ -347,17 +376,6 @@ static int format_prepare_headers (source_t *source, client_t *client)
             node = avl_get_next(node);
     }
     avl_tree_unlock(source->parser->vars);
-
-    config = config_get_config();
-    bytes = snprintf (ptr, remaining, "Server: %s\r\n", config->server_id);
-    config_release_config();
-    remaining -= bytes;
-    ptr += bytes;
-
-    /* prevent proxy servers from caching */
-    bytes = snprintf (ptr, remaining, "Cache-Control: no-cache\r\n");
-    remaining -= bytes;
-    ptr += bytes;
 
     bytes = snprintf (ptr, remaining, "\r\n");
     remaining -= bytes;

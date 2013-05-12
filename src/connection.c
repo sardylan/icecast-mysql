@@ -105,7 +105,7 @@ typedef struct
     avl_tree *contents;
 } cache_file_contents;
 
-static spin_t _connection_lock;
+static spin_t _connection_lock; // protects _current_id, _con_queue, _con_queue_tail
 static volatile unsigned long _current_id = 0;
 static int _initialized = 0;
 
@@ -117,7 +117,7 @@ static SSL_CTX *ssl_ctx;
 #endif
 
 /* filtering client connection based on IP */
-cache_file_contents banned_ip, allowed_ip;
+static cache_file_contents banned_ip, allowed_ip;
 
 rwlock_t _source_shutdown_rwlock;
 
@@ -568,8 +568,10 @@ static connection_t *_accept_connection(int duration)
  */
 static void _add_connection (client_queue_t *node)
 {
+    thread_spin_lock (&_connection_lock);
     *_con_queue_tail = node;
     _con_queue_tail = (volatile client_queue_t **)&node->next;
+    thread_spin_unlock (&_connection_lock);
 }
 
 
@@ -580,7 +582,8 @@ static client_queue_t *_get_connection(void)
 {
     client_queue_t *node = NULL;
 
-    /* common case, no new connections so don't bother taking locks */
+    thread_spin_lock (&_connection_lock);
+
     if (_con_queue)
     {
         node = (client_queue_t *)_con_queue;
@@ -589,6 +592,8 @@ static client_queue_t *_get_connection(void)
             _con_queue_tail = &_con_queue;
         node->next = NULL;
     }
+
+    thread_spin_unlock (&_connection_lock);
     return node;
 }
 
@@ -846,7 +851,7 @@ int connection_complete_source (source_t *source, int response)
         global_unlock();
 
         source->running = 1;
-        mountinfo = config_find_mount (config, source->mount);
+        mountinfo = config_find_mount (config, source->mount, MOUNT_TYPE_NORMAL);
         source_update_settings (config, source, mountinfo);
         config_release_config();
         slave_rebuild_mounts();
@@ -1173,7 +1178,7 @@ static void _handle_shoutcast_compatible (client_queue_t *node)
     if (node->shoutcast == 1)
     {
         char *source_password, *ptr, *headers;
-        mount_proxy *mountinfo = config_find_mount (config, shoutcast_mount);
+        mount_proxy *mountinfo = config_find_mount (config, shoutcast_mount, MOUNT_TYPE_NORMAL);
 
         if (mountinfo && mountinfo->password)
             source_password = strdup (mountinfo->password);
@@ -1339,7 +1344,7 @@ static void _handle_connection(void)
                     continue;
                 }
 
-                if (parser->req_type == httpp_req_source) {
+                if (parser->req_type == httpp_req_source || parser->req_type == httpp_req_put) {
                     _handle_source_request (client, uri);
                 }
                 else if (parser->req_type == httpp_req_stats) {

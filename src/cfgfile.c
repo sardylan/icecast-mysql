@@ -8,9 +8,9 @@
  *                      oddsock <oddsock@xiph.org>,
  *                      Karl Heyes <karl@xiph.org>
  *                      and others (see AUTHORS for details).
- * Copyright 2011,      Philipp "ph3-der-loewe" Schafft <lion@lion.leolix.org>,
- *                      Thomas B. "dm8tbr" Ruecker <thomas.rucker@tieto.com>,
+ * Copyright 2011,      Thomas B. "dm8tbr" Ruecker <thomas.rucker@tieto.com>,
  *                      Dave 'justdave' Miller <justdave@mozilla.com>.
+ * Copyright 2011-2012, Philipp "ph3-der-loewe" Schafft <lion@lion.leolix.org>,
  */
 
 #ifdef HAVE_CONFIG_H
@@ -20,6 +20,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#include <fnmatch.h>
+#endif
 #include <libxml/xmlmemory.h>
 #include <libxml/parser.h>
 
@@ -97,7 +100,11 @@ static void _parse_mount(xmlDocPtr doc, xmlNodePtr node, ice_config_t *c);
 static void _parse_listen_socket(xmlDocPtr doc, xmlNodePtr node, 
         ice_config_t *c);
 static void _add_server(xmlDocPtr doc, xmlNodePtr node, ice_config_t *c);
+
 static void _parse_mysqlstats(xmlDocPtr doc, xmlNodePtr node, ice_config_t *c);
+
+static void merge_mounts(mount_proxy * dst, mount_proxy * src);
+static inline void _merge_mounts_all(ice_config_t *c);
 
 static void create_locks(void) {
     thread_mutex_create(&_locks.relay_lock);
@@ -290,13 +297,11 @@ int config_parse_file(const char *filename, ice_config_t *configuration)
     node = xmlDocGetRootElement(doc);
     if (node == NULL) {
         xmlFreeDoc(doc);
-        xmlCleanupParser();
         return CONFIG_ENOROOT;
     }
 
     if (xmlStrcmp (node->name, XMLSTR("icecast")) != 0) {
         xmlFreeDoc(doc);
-        xmlCleanupParser();
         return CONFIG_EBADROOT;
     }
 
@@ -307,6 +312,8 @@ int config_parse_file(const char *filename, ice_config_t *configuration)
     _parse_root(doc, node->xmlChildrenNode, configuration);
 
     xmlFreeDoc(doc);
+
+    _merge_mounts_all(configuration);
 
     return 0;
 }
@@ -428,15 +435,9 @@ static void _parse_root(xmlDocPtr doc, xmlNodePtr node,
             _parse_authentication(doc, node->xmlChildrenNode, configuration);
         } else if (xmlStrcmp (node->name, XMLSTR("source-password")) == 0) {
             /* TODO: This is the backwards-compatibility location */
-            char *mount, *pass;
-            if ((mount = (char *)xmlGetProp(node, XMLSTR("mount"))) != NULL) {
-                pass = (char *)xmlNodeListGetString(doc, node->xmlChildrenNode, 1);
-                /* FIXME: This is a placeholder for per-mount passwords */
-            }
-            else {
-                if (configuration->source_password) xmlFree(configuration->source_password);
-                configuration->source_password = (char *)xmlNodeListGetString(doc, node->xmlChildrenNode, 1);
-            }
+            WARN0("<source-password> defined outside <authentication>. This is deprecated.");
+            if (configuration->source_password) xmlFree(configuration->source_password);
+            configuration->source_password = (char *)xmlNodeListGetString(doc, node->xmlChildrenNode, 1);
         } else if (xmlStrcmp (node->name, XMLSTR("icelogin")) == 0) {
             tmp = (char *)xmlNodeListGetString(doc, node->xmlChildrenNode, 1);
             configuration->ice_login = atoi(tmp);
@@ -491,7 +492,7 @@ static void _parse_root(xmlDocPtr doc, xmlNodePtr node,
         } else if (xmlStrcmp (node->name, XMLSTR("relay")) == 0) {
             _parse_relay(doc, node->xmlChildrenNode, configuration);
         } else if (xmlStrcmp (node->name, XMLSTR("mount")) == 0) {
-            _parse_mount(doc, node->xmlChildrenNode, configuration);
+            _parse_mount(doc, node, configuration);
         } else if (xmlStrcmp (node->name, XMLSTR("directory")) == 0) {
             _parse_directory(doc, node->xmlChildrenNode, configuration);
         } else if (xmlStrcmp (node->name, XMLSTR("paths")) == 0) {
@@ -575,11 +576,29 @@ static void _parse_mount(xmlDocPtr doc, xmlNodePtr node,
     mount_proxy *last=NULL;
     
     /* default <mount> settings */
+    mount->mounttype = MOUNT_TYPE_NORMAL;
     mount->max_listeners = -1;
     mount->burst_size = -1;
     mount->mp3_meta_interval = -1;
     mount->yp_public = -1;
     mount->next = NULL;
+
+    tmp = (char *)xmlGetProp(node, XMLSTR("type"));
+    if (tmp) {
+        if (strcmp(tmp, "normal") == 0) {
+	    mount->mounttype = MOUNT_TYPE_NORMAL;
+	}
+	else if (strcmp(tmp, "default") == 0) {
+	    mount->mounttype = MOUNT_TYPE_DEFAULT;
+	}
+	else {
+	    WARN1("Unknown mountpoint type: %s", tmp);
+            config_clear_mount (mount);
+            return;
+	}
+    }
+
+    node = node->xmlChildrenNode;
 
     do {
         if (node == NULL) break;
@@ -711,16 +730,25 @@ static void _parse_mount(xmlDocPtr doc, xmlNodePtr node,
     } while ((node = node->next));
 
     /* make sure we have at least the mountpoint name */
-    if (mount->mountname == NULL)
+    if (mount->mountname == NULL && mount->mounttype != MOUNT_TYPE_DEFAULT)
     {
         config_clear_mount (mount);
         return;
+    }
+    else if (mount->mountname != NULL && mount->mounttype == MOUNT_TYPE_DEFAULT)
+    {
+    	WARN1("Default mount %s has mount-name set. This is not supported. Behavior may not be consistent.", mount->mountname);
     }
     if (mount->auth)
         mount->auth->mount = strdup ((char *)mount->mountname);
     while(current) {
         last = current;
         current = current->next;
+    }
+
+    if (!mount->fallback_mount && (mount->fallback_when_full || mount->fallback_override))
+    {
+        WARN1("Config for mount %s contains fallback options but no fallback mount.", mount->mountname);
     }
 
     if(last)
@@ -883,10 +911,8 @@ static void _parse_authentication(xmlDocPtr doc, xmlNodePtr node,
         if (xmlIsBlankNode(node)) continue;
 
         if (xmlStrcmp (node->name, XMLSTR("source-password")) == 0) {
-            char *mount, *pass;
-            if ((mount = (char *)xmlGetProp(node, XMLSTR("mount"))) != NULL) {
-                pass = (char *)xmlNodeListGetString(doc, node->xmlChildrenNode, 1);
-                /* FIXME: This is a placeholder for per-mount passwords */
+            if (xmlGetProp(node, XMLSTR("mount"))) {
+                ERROR0("Mount level source password defined within global <authentication> section.");
             }
             else {
                 if (configuration->source_password)
@@ -1150,7 +1176,6 @@ static void _parse_mysqlstats(xmlDocPtr doc, xmlNodePtr node, ice_config_t *conf
     } while ((node = node->next));
 }
 
-
 static void _add_server(xmlDocPtr doc, xmlNodePtr node, 
         ice_config_t *configuration)
 {
@@ -1195,21 +1220,116 @@ static void _add_server(xmlDocPtr doc, xmlNodePtr node,
     else {
         free (server);
     }
-    
 }
 
+static void merge_mounts(mount_proxy * dst, mount_proxy * src) {
+    if (!dst || !src)
+    	return;
+
+    if (!dst->username)
+    	dst->username = (char*)xmlStrdup((xmlChar*)src->username);
+    if (!dst->password)
+    	dst->password = (char*)xmlStrdup((xmlChar*)src->password);
+    if (!dst->dumpfile)
+    	dst->dumpfile = (char*)xmlStrdup((xmlChar*)src->dumpfile);
+    if (!dst->intro_filename)
+    	dst->intro_filename = (char*)xmlStrdup((xmlChar*)src->intro_filename);
+    if (!dst->fallback_when_full)
+    	dst->fallback_when_full = src->fallback_when_full;
+    if (dst->max_listeners == -1)
+    	dst->max_listeners = src->max_listeners;
+    if (!dst->fallback_mount)
+    	dst->fallback_mount = (char*)xmlStrdup((xmlChar*)src->fallback_mount);
+    if (!dst->fallback_override)
+    	dst->fallback_override = src->fallback_override;
+    if (!dst->no_mount)
+    	dst->no_mount = src->no_mount;
+    if (dst->burst_size == -1)
+    	dst->burst_size = src->burst_size;
+    if (!dst->queue_size_limit)
+    	dst->queue_size_limit = src->queue_size_limit;
+    if (!dst->hidden)
+    	dst->hidden = src->hidden;
+    if (!dst->source_timeout)
+    	dst->source_timeout = src->source_timeout;
+    if (!dst->charset)
+    	dst->charset = (char*)xmlStrdup((xmlChar*)src->charset);
+    if (dst->mp3_meta_interval == -1)
+    	dst->mp3_meta_interval = src->mp3_meta_interval;
+    if (!dst->auth_type)
+    	dst->auth_type = (char*)xmlStrdup((xmlChar*)src->auth_type);
+    // TODO: dst->auth
+    if (!dst->cluster_password)
+    	dst->cluster_password = (char*)xmlStrdup((xmlChar*)src->cluster_password);
+    // TODO: dst->auth_options
+    if (!dst->on_connect)
+    	dst->on_connect = (char*)xmlStrdup((xmlChar*)src->on_connect);
+    if (!dst->on_disconnect)
+    	dst->on_disconnect = (char*)xmlStrdup((xmlChar*)src->on_disconnect);
+    if (!dst->max_listener_duration)
+    	dst->max_listener_duration = src->max_listener_duration;
+    if (!dst->stream_name)
+    	dst->stream_name = (char*)xmlStrdup((xmlChar*)src->stream_name);
+    if (!dst->stream_description)
+    	dst->stream_description = (char*)xmlStrdup((xmlChar*)src->stream_description);
+    if (!dst->stream_url)
+    	dst->stream_url = (char*)xmlStrdup((xmlChar*)src->stream_url);
+    if (!dst->stream_genre)
+    	dst->stream_genre = (char*)xmlStrdup((xmlChar*)src->stream_genre);
+    if (!dst->bitrate)
+    	dst->bitrate = (char*)xmlStrdup((xmlChar*)src->bitrate);
+    if (!dst->type)
+    	dst->type = (char*)xmlStrdup((xmlChar*)src->type);
+    if (!dst->subtype)
+    	dst->subtype = (char*)xmlStrdup((xmlChar*)src->subtype);
+    if (dst->yp_public == -1)
+    	dst->yp_public = src->yp_public;
+}
+
+static inline void _merge_mounts_all(ice_config_t *c) {
+    mount_proxy *mountinfo = c->mounts;
+    mount_proxy *default_mount;
+
+    for (; mountinfo; mountinfo = mountinfo->next)
+    {
+    	if (mountinfo->mounttype != MOUNT_TYPE_NORMAL)
+	    continue;
+
+        default_mount = config_find_mount(c, mountinfo->mountname, MOUNT_TYPE_DEFAULT);
+
+	merge_mounts(mountinfo, default_mount);
+    }
+}
 
 /* return the mount details that match the supplied mountpoint */
-mount_proxy *config_find_mount (ice_config_t *config, const char *mount)
+mount_proxy *config_find_mount (ice_config_t *config, const char *mount, mount_type type)
 {
     mount_proxy *mountinfo = config->mounts;
 
-    while (mountinfo)
+    for (; mountinfo; mountinfo = mountinfo->next)
     {
-        if (strcmp (mountinfo->mountname, mount) == 0)
+        if (mountinfo->mounttype != type)
+	    continue;
+
+	if (mount == NULL || mountinfo->mountname == NULL)
             break;
-        mountinfo = mountinfo->next;
+
+	if (mountinfo->mounttype == MOUNT_TYPE_NORMAL && strcmp (mountinfo->mountname, mount) == 0)
+            break;
+
+#ifndef _WIN32
+        if (fnmatch(mountinfo->mountname, mount, FNM_PATHNAME) == 0)
+            break;
+#else
+        if (strcmp(mountinfo->mountname, mount) == 0)
+            break;
+#endif
     }
+
+    /* retry with default mount */
+    if (!mountinfo && type == MOUNT_TYPE_NORMAL)
+            mountinfo = config_find_mount(config, mount, MOUNT_TYPE_DEFAULT);
+
     return mountinfo;
 }
 

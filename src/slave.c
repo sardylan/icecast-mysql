@@ -39,6 +39,7 @@
 
 #include "compat.h"
 
+#include <libxml/uri.h>
 #include "thread/thread.h"
 #include "avl/avl.h"
 #include "net/sock.h"
@@ -64,6 +65,7 @@ static int slave_running = 0;
 static volatile int update_settings = 0;
 static volatile int update_all_mounts = 0;
 static volatile unsigned int max_interval = 0;
+static mutex_t _slave_mutex; // protects update_settings, update_all_mounts, max_interval
 
 relay_server *relay_free (relay_server *relay)
 {
@@ -109,9 +111,11 @@ relay_server *relay_copy (relay_server *r)
  */
 void slave_update_all_mounts (void)
 {
+    thread_mutex_lock(&_slave_mutex);
     max_interval = 0;
     update_all_mounts = 1;
     update_settings = 1;
+    thread_mutex_unlock(&_slave_mutex);
 }
 
 
@@ -120,7 +124,9 @@ void slave_update_all_mounts (void)
  */
 void slave_rebuild_mounts (void)
 {
+    thread_mutex_lock(&_slave_mutex);
     update_settings = 1;
+    thread_mutex_unlock(&_slave_mutex);
 }
 
 
@@ -131,6 +137,7 @@ void slave_initialize(void)
 
     slave_running = 1;
     max_interval = 0;
+    thread_mutex_create (&_slave_mutex);
     _slave_thread_id = thread_create("Slave Thread", _slave_thread, NULL, THREAD_ATTACHED);
 }
 
@@ -369,9 +376,13 @@ static void *start_relay_stream (void *arg)
     source_clear_source (relay->source);
 
     /* cleanup relay, but prevent this relay from starting up again too soon */
+    thread_mutex_lock(&_slave_mutex);
+    thread_mutex_lock(&(config_locks()->relay_lock));
     relay->source->on_demand = 0;
     relay->start = time(NULL) + max_interval;
     relay->cleanup = 1;
+    thread_mutex_unlock(&(config_locks()->relay_lock));
+    thread_mutex_unlock(&_slave_mutex);
 
     return NULL;
 }
@@ -396,7 +407,7 @@ static void check_relay_stream (relay_server *relay)
             if (relay->on_demand)
             {
                 ice_config_t *config = config_get_config ();
-                mount_proxy *mountinfo = config_find_mount (config, relay->localmount);
+                mount_proxy *mountinfo = config_find_mount (config, relay->localmount, MOUNT_TYPE_NORMAL);
                 if (mountinfo == NULL)
                     source_update_settings (config, relay->source, mountinfo);
                 config_release_config ();
@@ -463,7 +474,7 @@ static void check_relay_stream (relay_server *relay)
         if (relay->on_demand && relay->source)
         {
             ice_config_t *config = config_get_config ();
-            mount_proxy *mountinfo = config_find_mount (config, relay->localmount);
+            mount_proxy *mountinfo = config_find_mount (config, relay->localmount, MOUNT_TYPE_NORMAL);
             source_update_settings (config, relay->source, mountinfo);
             config_release_config ();
             stats_event (relay->localmount, "listeners", "0");
@@ -656,18 +667,37 @@ static int update_from_master(ice_config_t *config)
             if (!strlen(buf))
                 continue;
             DEBUG2 ("read %d from master \"%s\"", count++, buf);
+            xmlURIPtr parsed_uri = xmlParseURI(buf);
+            if (parsed_uri == NULL) {
+                DEBUG0("Error while parsing line from master. Ignoring line.");
+                continue;
+            }
             r = calloc (1, sizeof (relay_server));
             if (r)
             {
-                r->server = (char *)xmlCharStrdup (master);
-                r->port = port;
-                r->mount = (char *)xmlCharStrdup (buf);
-                r->localmount = (char *)xmlCharStrdup (buf);
+                if (parsed_uri->server != NULL)
+                {
+                  r->server = strdup(parsed_uri->server);
+                  if (parsed_uri->port == 0)
+                    r->port = 80;
+                  else
+                    r->port = parsed_uri->port;
+                }
+                else
+                {
+                  r->server = (char *)xmlCharStrdup (master);
+                  r->port = port;
+                }
+
+                r->mount = strdup(parsed_uri->path);
+                r->localmount = strdup(parsed_uri->path);
                 r->mp3metadata = 1;
                 r->on_demand = on_demand;
                 r->next = new_relays;
+                DEBUG3 ("Added relay host=\"%s\", port=%d, mount=\"%s\"", r->server, r->port, r->mount);
                 new_relays = r;
             }
+            xmlFreeURI(parsed_uri);
         }
         sock_close (mastersock);
 
@@ -697,8 +727,10 @@ static void *_slave_thread(void *arg)
     ice_config_t *config;
     unsigned int interval = 0;
 
+    thread_mutex_lock(&_slave_mutex);
     update_settings = 0;
     update_all_mounts = 0;
+    thread_mutex_unlock(&_slave_mutex);
 
     config = config_get_config();
     stats_global (config);
@@ -711,11 +743,13 @@ static void *_slave_thread(void *arg)
         int skip_timer = 0;
 
         /* re-read xml file if requested */
+        global_lock();
         if (global . schedule_config_reread)
         {
             event_config_read (NULL);
             global . schedule_config_reread = 0;
         }
+        global_unlock();
 
         thread_sleep (1000000);
         if (slave_running == 0)
@@ -724,6 +758,7 @@ static void *_slave_thread(void *arg)
         ++interval;
 
         /* only update relays lists when required */
+        thread_mutex_lock(&_slave_mutex);
         if (max_interval <= interval)
         {
             DEBUG0 ("checking master stream list");
@@ -733,6 +768,7 @@ static void *_slave_thread(void *arg)
                 skip_timer = 1;
             interval = 0;
             max_interval = config->master_update_interval;
+            thread_mutex_unlock(&_slave_mutex);
 
             /* the connection could take some time, so the lock can drop */
             if (update_from_master (config))
@@ -745,18 +781,23 @@ static void *_slave_thread(void *arg)
             config_release_config();
         }
         else
+        {
+            thread_mutex_unlock(&_slave_mutex);
             thread_mutex_lock (&(config_locks()->relay_lock));
+        }
 
         relay_check_streams (global.relays, cleanup_relays, skip_timer);
         relay_check_streams (global.master_relays, NULL, skip_timer);
         thread_mutex_unlock (&(config_locks()->relay_lock));
 
+        thread_mutex_lock(&_slave_mutex);
         if (update_settings)
         {
             source_recheck_mounts (update_all_mounts);
             update_settings = 0;
             update_all_mounts = 0;
         }
+        thread_mutex_unlock(&_slave_mutex);
     }
     INFO0 ("shutting down current relays");
     relay_check_streams (NULL, global.relays, 0);

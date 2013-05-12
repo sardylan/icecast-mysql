@@ -8,6 +8,7 @@
  *                      oddsock <oddsock@xiph.org>,
  *                      Karl Heyes <karl@xiph.org>
  *                      and others (see AUTHORS for details).
+ * Copyright 2011-2012, Philipp "ph3-der-loewe" Schafft <lion@lion.leolix.org>,
  */
 
 /* client.c
@@ -36,6 +37,8 @@
 
 #include "client.h"
 #include "logging.h"
+
+#include "util.h"
 
 #ifdef _WIN32
 #define snprintf _snprintf
@@ -130,7 +133,7 @@ int client_check_source_auth (client_t *client, const char *mount)
     char *pass = config->source_password;
     char *user = "source";
     int ret = -1;
-    mount_proxy *mountinfo = config_find_mount (config, mount);
+    mount_proxy *mountinfo = config_find_mount (config, mount, MOUNT_TYPE_NORMAL);
 
     do
     {
@@ -180,49 +183,43 @@ int client_read_bytes (client_t *client, void *buf, unsigned len)
     return bytes;
 }
 
-
-void client_send_400(client_t *client, char *message) {
-    snprintf (client->refbuf->data, PER_CLIENT_REFBUF_SIZE,
-            "HTTP/1.0 400 Bad Request\r\n"
-            "Content-Type: text/html\r\n\r\n"
-            "<b>%s</b>\r\n", message);
-    client->respcode = 400;
-    client->refbuf->len = strlen (client->refbuf->data);
-    fserve_add_client (client, NULL);
-}
-
-void client_send_404(client_t *client, char *message) {
-
-    snprintf (client->refbuf->data, PER_CLIENT_REFBUF_SIZE,
-            "HTTP/1.0 404 File Not Found\r\n"
-            "Content-Type: text/html\r\n\r\n"
-            "<b>%s</b>\r\n", message);
-    client->respcode = 404;
-    client->refbuf->len = strlen (client->refbuf->data);
-    fserve_add_client (client, NULL);
-}
-
-
-void client_send_401(client_t *client) {
-    snprintf (client->refbuf->data, PER_CLIENT_REFBUF_SIZE,
-            "HTTP/1.0 401 Authentication Required\r\n"
-            "WWW-Authenticate: Basic realm=\"Icecast2 Server\"\r\n"
-            "\r\n"
-            "You need to authenticate\r\n");
-    client->respcode = 401;
-    client->refbuf->len = strlen (client->refbuf->data);
-    fserve_add_client (client, NULL);
-}
-
-void client_send_403(client_t *client, const char *reason)
+static void client_send_error(client_t *client, int status, int plain, const char *message)
 {
-    if (reason == NULL)
-        reason = "Forbidden";
-    snprintf (client->refbuf->data, PER_CLIENT_REFBUF_SIZE,
-            "HTTP/1.0 403 %s\r\n\r\n", reason);
-    client->respcode = 403;
+    ssize_t ret;
+
+    ret = util_http_build_header(client->refbuf->data, PER_CLIENT_REFBUF_SIZE, 0,
+                                 0, status, NULL,
+                                 plain ? "text/plain" : "text/html", NULL,
+                                 plain ? message : "");
+
+    if (!plain)
+        snprintf(client->refbuf->data + ret, PER_CLIENT_REFBUF_SIZE - ret,
+                 "<html><head><title>Error %i</title></head><body><b>%i - %s</b></body></html>\r\n",
+                 status, status, message);
+
+    client->respcode = status;
     client->refbuf->len = strlen (client->refbuf->data);
     fserve_add_client (client, NULL);
+}
+
+void client_send_400(client_t *client, const char *message)
+{
+    client_send_error(client, 400, 0, message);
+}
+
+void client_send_404(client_t *client, const char *message)
+{
+    client_send_error(client, 404, 0, message);
+}
+
+void client_send_401(client_t *client)
+{
+    client_send_error(client, 401, 1, "You need to authenticate\r\n");
+}
+
+void client_send_403(client_t *client, const char *message)
+{
+    client_send_error(client, 403, 1, message);
 }
 
 

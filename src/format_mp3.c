@@ -9,6 +9,7 @@
  *                      oddsock <oddsock@xiph.org>,
  *                      Karl Heyes <karl@xiph.org>
  *                      and others (see AUTHORS for details).
+ * Copyright 2011-2012, Philipp "ph3-der-loewe" Schafft <lion@lion.leolix.org>,
  */
 
 /* format_mp3.c
@@ -293,9 +294,9 @@ static void mp3_set_title (source_t *source)
             if (source_mp3->inline_url)
             {
                 char *end = strstr (source_mp3->inline_url, "';");
-                int urllen = size;
+                ssize_t urllen = size;
                 if (end) urllen = end - source_mp3->inline_url + 2;
-                if (size-r > urllen)
+                if ((ssize_t)(size-r) > urllen)
                     snprintf (p->data+r, size-r, "StreamUrl='%s';", source_mp3->inline_url+11);
             }
             else if (source_mp3->url)
@@ -678,10 +679,6 @@ static int format_mp3_create_client_data(source_t *source, client_t *client)
         bytes = snprintf (ptr, remaining, "Content-Length: 221183499\r\n");
         remaining -= bytes;
         ptr += bytes;
-        /* avoid browser caching, reported via forum */
-        bytes = snprintf (ptr, remaining, "Expires: Mon, 26 Jul 1997 05:00:00 GMT\r\n");
-        remaining -= bytes;
-        ptr += bytes; 
     }
 
     client->format_data = client_mp3;

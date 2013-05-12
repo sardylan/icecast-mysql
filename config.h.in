@@ -1,16 +1,16 @@
 /* config.h.in.  Generated from configure.in by autoheader.  */
 
-/* Define if you have unistd.h */
-#undef CHROOT
-
-/* Define if you have pwd.h */
-#undef CHUID
-
 /* Define to 1 if you have the <alloca.h> header file. */
 #undef HAVE_ALLOCA_H
 
 /* Define to compile in auth URL support code */
 #undef HAVE_AUTH_URL
+
+/* Define to 1 if you have the `chown' function. */
+#undef HAVE_CHOWN
+
+/* Define to 1 if you have the `chroot' function. */
+#undef HAVE_CHROOT
 
 /* Define if you have libcurl. */
 #undef HAVE_CURL
@@ -38,6 +38,9 @@
 
 /* Define to 1 if you have the `gettimeofday' function. */
 #undef HAVE_GETTIMEOFDAY
+
+/* Define to 1 if you have the <grp.h> header file. */
+#undef HAVE_GRP_H
 
 /* Define to 1 if you have the `inet_aton' function. */
 #undef HAVE_INET_ATON
@@ -80,6 +83,9 @@
 
 /* Define if you have the sethostent function */
 #undef HAVE_SETHOSTENT
+
+/* Define to 1 if you have the `setuid' function. */
+#undef HAVE_SETUID
 
 /* Define to 1 if the system has the type `socklen_t'. */
 #undef HAVE_SOCKLEN_T

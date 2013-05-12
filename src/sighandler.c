@@ -8,6 +8,7 @@
  *                      oddsock <oddsock@xiph.org>,
  *                      Karl Heyes <karl@xiph.org>
  *                      and others (see AUTHORS for details).
+ * Copyright 2011-2012, Philipp "ph3-der-loewe" Schafft <lion@lion.leolix.org>,
  */
 
 #ifdef HAVE_CONFIG_H
@@ -54,7 +55,12 @@ void _sig_ignore(int signo)
 
 void _sig_hup(int signo)
 {
+    INFO1("Caught signal %d, scheduling config re-read...", signo);
+
+    global_lock();
     global . schedule_config_reread = 1;
+    global_unlock();
+
     /* some OSes require us to reattach the signal handler */
     signal(SIGHUP, _sig_hup);
 }

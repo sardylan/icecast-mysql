@@ -8,6 +8,7 @@
  *                      oddsock <oddsock@xiph.org>,
  *                      Karl Heyes <karl@xiph.org>
  *                      and others (see AUTHORS for details).
+ * Copyright 2011-2012, Philipp "ph3-der-loewe" Schafft <lion@lion.leolix.org>,
  */
 
 /* 
@@ -85,6 +86,8 @@
 #define CATMODULE "auth_url"
 
 typedef struct {
+    char *pass_headers; // headers passed from client to addurl.
+    char *prefix_headers; // prefix for passed headers.
     char *addurl;
     char *removeurl;
     char *stream_start;
@@ -112,6 +115,8 @@ static void auth_url_clear(auth_t *self)
     curl_easy_cleanup (url->handle);
     free (url->username);
     free (url->password);
+    free (url->pass_headers);
+    free (url->prefix_headers);
     free (url->removeurl);
     free (url->addurl);
     free (url->stream_start);
@@ -184,13 +189,22 @@ static auth_result url_remove_listener (auth_client *auth_user)
     ice_config_t *config;
     int port;
     char *userpwd = NULL, post [4096];
+    const char *agent;
+    char *user_agent, *ipaddr;
 
     if (url->removeurl == NULL)
         return AUTH_OK;
+
     config = config_get_config ();
     server = util_url_escape (config->hostname);
     port = config->port;
     config_release_config ();
+
+    agent = httpp_getvar (client->parser, "user-agent");
+    if (agent)
+        user_agent = util_url_escape (agent);
+    else
+        user_agent = strdup ("-");
 
     if (client->username)
         username = util_url_escape (client->username);
@@ -207,16 +221,19 @@ static auth_result url_remove_listener (auth_client *auth_user)
     if (mountreq == NULL)
         mountreq = httpp_getvar (client->parser, HTTPP_VAR_URI);
     mount = util_url_escape (mountreq);
+    ipaddr = util_url_escape (client->con->ip);
 
     snprintf (post, sizeof (post),
             "action=listener_remove&server=%s&port=%d&client=%lu&mount=%s"
-            "&user=%s&pass=%s&duration=%lu",
+            "&user=%s&pass=%s&duration=%lu&ip=%s&agent=%s",
             server, port, client->con->id, mount, username,
-            password, (long unsigned)duration);
+            password, (long unsigned)duration, ipaddr, user_agent);
     free (server);
     free (mount);
     free (username);
     free (password);
+    free (ipaddr);
+    free (user_agent);
 
     if (strchr (url->removeurl, '@') == NULL)
     {
@@ -227,7 +244,7 @@ static auth_result url_remove_listener (auth_client *auth_user)
             /* auth'd requests may not have a user/pass, but may use query args */
             if (client->username && client->password)
             {
-                int len = strlen (client->username) + strlen (client->password) + 2;
+                size_t len = strlen (client->username) + strlen (client->password) + 2;
                 userpwd = malloc (len);
                 snprintf (userpwd, len, "%s:%s", client->username, client->password);
                 curl_easy_setopt (url->handle, CURLOPT_USERPWD, userpwd);
@@ -266,6 +283,10 @@ static auth_result url_add_listener (auth_client *auth_user)
     char *mount, *ipaddr, *server;
     ice_config_t *config;
     char *userpwd = NULL, post [4096];
+    ssize_t post_offset;
+    char *pass_headers, *cur_header, *next_header;
+    const char *header_val;
+    char *header_valesc;
 
     if (url->addurl == NULL)
         return AUTH_OK;
@@ -274,16 +295,20 @@ static auth_result url_add_listener (auth_client *auth_user)
     server = util_url_escape (config->hostname);
     port = config->port;
     config_release_config ();
+
     agent = httpp_getvar (client->parser, "user-agent");
-    if (agent == NULL)
-        agent = "-";
-    user_agent = util_url_escape (agent);
+    if (agent)
+        user_agent = util_url_escape (agent);
+    else
+        user_agent = strdup ("-");
+
     if (client->username)
-        username  = util_url_escape (client->username);
+        username = util_url_escape (client->username);
     else
         username = strdup ("");
+
     if (client->password)
-        password  = util_url_escape (client->password);
+        password = util_url_escape (client->password);
     else
         password = strdup ("");
 
@@ -294,7 +319,7 @@ static auth_result url_add_listener (auth_client *auth_user)
     mount = util_url_escape (mountreq);
     ipaddr = util_url_escape (client->con->ip);
 
-    snprintf (post, sizeof (post),
+    post_offset = snprintf (post, sizeof (post),
             "action=listener_add&server=%s&port=%d&client=%lu&mount=%s"
             "&user=%s&pass=%s&ip=%s&agent=%s",
             server, port, client->con->id, mount, username,
@@ -306,6 +331,35 @@ static auth_result url_add_listener (auth_client *auth_user)
     free (password);
     free (ipaddr);
 
+    pass_headers = NULL;
+    if (url->pass_headers)
+        pass_headers = strdup (url->pass_headers);
+    if (pass_headers)
+    {
+        cur_header = pass_headers;
+        while (cur_header)
+        {
+	    next_header = strstr (cur_header, ",");
+	    if (next_header)
+	    {
+		*next_header=0;
+                next_header++;
+	    }
+
+            header_val = httpp_getvar (client->parser, cur_header);
+            if (header_val)
+            {
+                header_valesc = util_url_escape (header_val);
+                post_offset += snprintf (post+post_offset, sizeof (post)-post_offset, "&%s%s=%s",
+                                         url->prefix_headers ? url->prefix_headers : "",
+                                         cur_header, header_valesc);
+                free (header_valesc);
+            }
+
+	    cur_header = next_header;
+        }
+    }
+
     if (strchr (url->addurl, '@') == NULL)
     {
         if (url->userpwd)
@@ -315,7 +369,7 @@ static auth_result url_add_listener (auth_client *auth_user)
             /* auth'd requests may not have a user/pass, but may use query args */
             if (client->username && client->password)
             {
-                int len = strlen (client->username) + strlen (client->password) + 2;
+                size_t len = strlen (client->username) + strlen (client->password) + 2;
                 userpwd = malloc (len);
                 snprintf (userpwd, len, "%s:%s", client->username, client->password);
                 curl_easy_setopt (url->handle, CURLOPT_USERPWD, userpwd);
@@ -358,7 +412,7 @@ static void url_stream_start (auth_client *auth_user)
 {
     char *mount, *server;
     ice_config_t *config = config_get_config ();
-    mount_proxy *mountinfo = config_find_mount (config, auth_user->mount);
+    mount_proxy *mountinfo = config_find_mount (config, auth_user->mount, MOUNT_TYPE_NORMAL);
     auth_t *auth = mountinfo->auth;
     auth_url *url = auth->state;
     char *stream_start_url;
@@ -410,7 +464,7 @@ static void url_stream_end (auth_client *auth_user)
 {
     char *mount, *server;
     ice_config_t *config = config_get_config ();
-    mount_proxy *mountinfo = config_find_mount (config, auth_user->mount);
+    mount_proxy *mountinfo = config_find_mount (config, auth_user->mount, MOUNT_TYPE_NORMAL);
     auth_t *auth = mountinfo->auth;
     auth_url *url = auth->state;
     char *stream_end_url;
@@ -548,6 +602,16 @@ int auth_get_url_auth (auth_t *authenticator, config_options_t *options)
         {
             free (url_info->password);
             url_info->password = strdup (options->value);
+        }
+        if(!strcmp(options->name, "headers"))
+        {
+            free (url_info->pass_headers);
+            url_info->pass_headers = strdup (options->value);
+        }
+        if(!strcmp(options->name, "header_prefix"))
+        {
+            free (url_info->prefix_headers);
+            url_info->prefix_headers = strdup (options->value);
         }
         if(!strcmp(options->name, "listener_add"))
         {

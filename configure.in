@@ -1,4 +1,4 @@
-AC_INIT([Icecast], [2.3.3], [icecast@xiph.org])
+AC_INIT([Icecast], [2.3.99.3], [icecast@xiph.org])
 
 AC_PREREQ(2.54)
 AC_CONFIG_SRCDIR(src/main.c)
@@ -61,8 +61,10 @@ AC_HEADER_STDC
 AC_HEADER_TIME
 
 AC_CHECK_HEADERS([alloca.h sys/timeb.h])
-AC_CHECK_HEADERS(pwd.h, AC_DEFINE(CHUID, 1, [Define if you have pwd.h]),,)
-AC_CHECK_HEADERS(unistd.h, AC_DEFINE(CHROOT, 1, [Define if you have unistd.h]),,)
+AC_CHECK_HEADERS([pwd.h unistd.h grp.h sys/types.h],,,AC_INCLUDES_DEFAULT)
+AC_CHECK_FUNCS([setuid])
+AC_CHECK_FUNCS([chroot])
+AC_CHECK_FUNCS([chown])
 
 dnl Checks for typedefs, structures, and compiler characteristics.
 XIPH_C__FUNC__
@@ -177,7 +179,7 @@ AC_SUBST(ICECAST_OPTIONAL)
 AC_SUBST(HAVE_KATE)
 AC_SUBST(KATE_LIBS)
 
-AC_OUTPUT([Makefile conf/Makefile debian/Makefile src/Makefile src/avl/Makefile
+AC_OUTPUT([Makefile conf/Makefile src/Makefile src/avl/Makefile
 src/httpp/Makefile src/thread/Makefile src/log/Makefile
 src/net/Makefile src/timing/Makefile doc/Makefile web/Makefile
 admin/Makefile win32/Makefile win32/res/Makefile examples/Makefile])

@@ -8,6 +8,7 @@
  *                      oddsock <oddsock@xiph.org>,
  *                      Karl Heyes <karl@xiph.org>
  *                      and others (see AUTHORS for details).
+ * Copyright 2011-2012, Philipp "ph3-der-loewe" Schafft <lion@lion.leolix.org>,
  */
 
 #ifdef HAVE_CONFIG_H
@@ -54,7 +55,15 @@ int get_clf_time (char *buffer, unsigned len, struct tm *t)
     struct tm *thetime;
     time_t now;
 
-    gmtime_r(&time1, &gmt);
+#if !defined(_WIN32)
+    thetime = gmtime_r(&time1, &gmt)
+#else
+    /* gmtime() on W32 breaks POSIX and IS thread-safe (uses TLS) */
+    thetime = gmtime (&time1);
+    if (thetime)
+      memcpy (&gmt, thetime, sizeof (gmt));
+#endif
+    /* FIXME: bail out if gmtime* returns NULL */
 
     time_days = t->tm_yday - gmt.tm_yday;
 
@@ -111,7 +120,6 @@ int get_clf_time (char *buffer, unsigned len, struct tm *t)
 void logging_access(client_t *client)
 {
     char datebuf[128];
-    char reqbuf[1024];
     struct tm thetime;
     time_t now;
     time_t stayed;
@@ -127,12 +135,6 @@ void logging_access(client_t *client)
 #else
     strftime (datebuf, sizeof(datebuf), LOGGING_FORMAT_CLF, &thetime);
 #endif
-    /* build the request */
-    snprintf (reqbuf, sizeof(reqbuf), "%s %s %s/%s",
-            httpp_getvar (client->parser, HTTPP_VAR_REQ_TYPE),
-            httpp_getvar (client->parser, HTTPP_VAR_URI),
-            httpp_getvar (client->parser, HTTPP_VAR_PROTOCOL),
-            httpp_getvar (client->parser, HTTPP_VAR_VERSION));
 
     stayed = now - client->con->con_time;
 
@@ -150,11 +152,14 @@ void logging_access(client_t *client)
         user_agent = "-";
 
     log_write_direct (accesslog,
-            "%s - %s [%s] \"%s\" %d %" PRIu64 " \"%s\" \"%s\" %lu",
+            "%s - %H [%s] \"%H %H %H/%H\" %d %" PRIu64 " \"% H\" \"% H\" %lu",
             client->con->ip,
             username,
             datebuf,
-            reqbuf,
+            httpp_getvar (client->parser, HTTPP_VAR_REQ_TYPE),
+            httpp_getvar (client->parser, HTTPP_VAR_URI),
+            httpp_getvar (client->parser, HTTPP_VAR_PROTOCOL),
+            httpp_getvar (client->parser, HTTPP_VAR_VERSION),
             client->respcode,
             client->con->sent_bytes,
             referrer,
