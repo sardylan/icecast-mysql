@@ -200,7 +200,7 @@ void mysqlStatsDBCheck()
 void mysqlStatsConnect(unsigned long temp_id, time_t temp_start, char *temp_ip, char *temp_agent, char *temp_mount)
 {
     mysql_stats_connect_thread_data *tdata;
-    int ln;
+    size_t ln;
     int th_ret;
     pthread_t thread;
     pthread_attr_t tattr;
