@@ -40,7 +40,7 @@ void mysqlStatsDBClose();
 
 void mysqlStatsDBCheck();
 
-void mysqlStatsConnect(unsigned long, time_t, char *, char *, char *);
+void mysqlStatsConnect(unsigned long, time_t, char *, const char *, char *);
 void mysqlStatsDisconnect(unsigned long, time_t, time_t);
 
 void *mysqlStatsConnectThread(void *);

@@ -23,6 +23,7 @@
 #include "mysqlstats.h"
 #include "cfgfile.h"
 #include "logging.h"
+#include "util.h"
 
 #undef CATMODULE
 #define CATMODULE "mysqlstats"
@@ -197,7 +198,7 @@ void mysqlStatsDBCheck()
  * @param[in] temp_mount Mount point requested
  */
 
-void mysqlStatsConnect(unsigned long temp_id, time_t temp_start, char *temp_ip, char *temp_agent, char *temp_mount)
+void mysqlStatsConnect(unsigned long temp_id, time_t temp_start, char *temp_ip, const char *temp_agent, char *temp_mount)
 {
     mysql_stats_connect_thread_data *tdata;
     size_t ln;
@@ -218,13 +219,11 @@ void mysqlStatsConnect(unsigned long temp_id, time_t temp_start, char *temp_ip, 
         strcpy(tdata->ip, temp_ip);
 
         // temp_agent may be a NULL pointer
-        if(temp_agent == NULL) {
+        if(temp_agent) {
+            tdata->agent = util_url_escape(temp_agent);
+        } else {
             tdata->agent = (char *) malloc(sizeof(char));
             *(tdata->agent) = '\0';
-        } else {
-            ln = strlen(temp_agent);
-            tdata->agent = (char *) calloc(ln+1, sizeof(char));
-            strcpy(tdata->agent, temp_agent);
         }
 
         ln = strlen(temp_mount);

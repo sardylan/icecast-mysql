@@ -700,7 +700,6 @@ void source_main (source_t *source)
     refbuf_t *refbuf;
     client_t *client;
     avl_node *client_node;
-    char *user_agent;
 
     source_init (source);
 
@@ -800,10 +799,7 @@ void source_main (source_t *source)
             }
 
             /* Otherwise, the client is accepted, add it */
-            user_agent = (char *) httpp_getvar(client->parser, "user-agent");
-            mysqlStatsConnect(client->con->id, client->con->con_time, client->con->ip, user_agent, source->mount);
-            free (user_agent);
-
+            mysqlStatsConnect(client->con->id, client->con->con_time, client->con->ip, httpp_getvar(client->parser, "user-agent"), source->mount);
             avl_insert(source->client_tree, client_node->key);
 
             source->listeners++;
