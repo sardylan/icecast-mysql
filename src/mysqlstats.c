@@ -28,9 +28,27 @@
 #undef CATMODULE
 #define CATMODULE "mysqlstats"
 
+#define MYSQL_QUERY_MAXLENGTH_UNESCAPED 2048;
+#define MYSQL_QUERY_MAXLENGTH_ESCAPED 4097;
+
 int mysqlstats_enabled;
 MYSQL *mysql_connection;
 pthread_mutex_t mysql_mutex;
+
+
+/**
+ * Auto-escape a SQL String
+ * @param[in] output Escaped Output string
+ * @param[in] input Unescaped Input string
+ */
+
+void mysqlStringEscape(char *output, const char *input)
+{
+    if(input == NULL)
+        *(output) = '\0';
+    else
+        mysql_real_escape_string(mysql_connection, output, input, (unsigned long) strlen(input));
+}
 
 
 /**
@@ -140,10 +158,10 @@ void mysqlStatsDBClose()
 
 void mysqlStatsDBCheck()
 {
-    char sql_query[2048];
+    char sql_query[MYSQL_QUERY_MAXLENGTH_ESCAPED];
 
     // If doesn't exists, creates table online
-    strcpy(sql_query, "CREATE TABLE IF NOT EXISTS `online` (`id` bigint(20) unsigned NOT NULL, `ip` text(15) COLLATE utf8_bin NOT NULL, `agent` varchar(1024) COLLATE utf8_bin NOT NULL, `start` timestamp NOT NULL, `mount` bigint(20) unsigned NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;");
+    mysqlStringEscape(sql_query, "CREATE TABLE IF NOT EXISTS `online` (`id` bigint(20) unsigned NOT NULL, `ip` text(15) COLLATE utf8_bin NOT NULL, `agent` varchar(1024) COLLATE utf8_bin NOT NULL, `start` timestamp NOT NULL, `mount` bigint(20) unsigned NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;");
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
@@ -154,7 +172,7 @@ void mysqlStatsDBCheck()
     pthread_mutex_unlock(&mysql_mutex);
 
     // Truncates table online
-    strcpy(sql_query, "TRUNCATE TABLE `online`");
+    mysqlStringEscape(sql_query, "TRUNCATE TABLE `online`");
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
@@ -165,7 +183,7 @@ void mysqlStatsDBCheck()
     pthread_mutex_unlock(&mysql_mutex);
 
     // If doesn't exists, creates table stats
-    strcpy(sql_query, "CREATE TABLE IF NOT EXISTS `stats` (`id` bigint(20) unsigned NOT NULL AUTO_INCREMENT, `ip` text(15) COLLATE utf8_bin NOT NULL, `agent` varchar(1024) COLLATE utf8_bin NOT NULL, `mount` varchar(128) COLLATE utf8_bin NOT NULL, `start` timestamp NOT NULL, `stop` timestamp NOT NULL, `duration` int(10) unsigned NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1;");
+    mysqlStringEscape(sql_query, "CREATE TABLE IF NOT EXISTS `stats` (`id` bigint(20) unsigned NOT NULL AUTO_INCREMENT, `ip` text(15) COLLATE utf8_bin NOT NULL, `agent` varchar(1024) COLLATE utf8_bin NOT NULL, `mount` varchar(128) COLLATE utf8_bin NOT NULL, `start` timestamp NOT NULL, `stop` timestamp NOT NULL, `duration` int(10) unsigned NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1;");
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
@@ -176,7 +194,7 @@ void mysqlStatsDBCheck()
     pthread_mutex_unlock(&mysql_mutex);
 
     // If doesn't exists, creates table mountpoints
-    strcpy(sql_query, "CREATE TABLE IF NOT EXISTS `mountpoints` (`id` bigint(20) unsigned NOT NULL AUTO_INCREMENT, `mount` varchar(128) COLLATE utf8_bin NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1;");
+    mysqlStringEscape(sql_query, "CREATE TABLE IF NOT EXISTS `mountpoints` (`id` bigint(20) unsigned NOT NULL AUTO_INCREMENT, `mount` varchar(128) COLLATE utf8_bin NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1;");
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
@@ -287,7 +305,8 @@ void mysqlStatsDisconnect(unsigned long temp_id, time_t temp_start, time_t temp_
 void *mysqlStatsConnectThread(void *input)
 {
     mysql_stats_connect_thread_data *tdata;
-    char sql_query[2048];
+    char sql_query[MYSQL_QUERY_MAXLENGTH_ESCAPED];
+    char sql_tempquery[MYSQL_QUERY_MAXLENGTH_UNESCAPED];
     MYSQL_RES *result;
     MYSQL_ROW row;
     int mysqlret, mountid;
@@ -305,7 +324,8 @@ void *mysqlStatsConnectThread(void *input)
     INFO0("MYSQLDEBUG::: #################################################");
 
     // Checking if mountpoint already exists
-    sprintf(sql_query, "SELECT COUNT(id) FROM mountpoints WHERE mount = '%s'", tdata->mount);
+    sprintf(sql_tempquery, "SELECT COUNT(id) FROM mountpoints WHERE mount = '%s'", tdata->mount);
+    mysqlStringEscape(sql_query, sql_tempquery);
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
@@ -318,7 +338,8 @@ void *mysqlStatsConnectThread(void *input)
 
     // If doesn't, inserts it into mountpoints table
     if(mysqlret == 0) {
-        sprintf(sql_query, "INSERT INTO mountpoints (mount) VALUES ('%s');", tdata->mount);
+        sprintf(sql_tempquery, "INSERT INTO mountpoints (mount) VALUES ('%s');", tdata->mount);
+        mysqlStringEscape(sql_query, sql_tempquery);
         DEBUG1("Executing query \"%s\"", sql_query);
 
         pthread_mutex_lock(&mysql_mutex);
@@ -332,7 +353,8 @@ void *mysqlStatsConnectThread(void *input)
     }
 
     // Gets numerical id of mountpoint
-    sprintf(sql_query, "SELECT id FROM mountpoints WHERE mount = '%s'", tdata->mount);
+    sprintf(sql_tempquery, "SELECT id FROM mountpoints WHERE mount = '%s'", tdata->mount);
+    mysqlStringEscape(sql_query, sql_tempquery);
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
@@ -344,7 +366,8 @@ void *mysqlStatsConnectThread(void *input)
     pthread_mutex_unlock(&mysql_mutex);
 
     // Adding record to DB
-    sprintf(sql_query, "INSERT INTO online (id, ip, agent, start, mount) VALUES (%lu, '%s', '%s', FROM_UNIXTIME(%lld), %d)", tdata->id, tdata->ip, tdata->agent, (long long) tdata->start, mountid);
+    sprintf(sql_tempquery, "INSERT INTO online (id, ip, agent, start, mount) VALUES (%lu, '%s', '%s', FROM_UNIXTIME(%lld), %d)", tdata->id, tdata->ip, tdata->agent, (long long) tdata->start, mountid);
+    mysqlStringEscape(sql_query, sql_tempquery);
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
@@ -376,7 +399,8 @@ void *mysqlStatsDisconnectThread(void *input)
     mysql_stats_disconnect_thread_data *tdata;
     MYSQL_RES *result;
     MYSQL_ROW row;
-    char sql_query[2048];
+    char sql_query[MYSQL_QUERY_MAXLENGTH_ESCAPED];
+    char sql_tempquery[MYSQL_QUERY_MAXLENGTH_UNESCAPED];
     char ip[16];
     char agent[1025];
     int mount;
@@ -393,7 +417,8 @@ void *mysqlStatsDisconnectThread(void *input)
     INFO0("MYSQLDEBUG::: -------------------------------------------------");
 
     // Obtaining IP and MountPoint from "online" table
-    sprintf(sql_query, "SELECT ip, agent, mount FROM online WHERE id = %lld", (long long) tdata->id);
+    sprintf(sql_tempquery, "SELECT ip, agent, mount FROM online WHERE id = %lld", (long long) tdata->id);
+    mysqlStringEscape(sql_query, sql_tempquery);
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
@@ -407,7 +432,8 @@ void *mysqlStatsDisconnectThread(void *input)
     pthread_mutex_unlock(&mysql_mutex);
 
     // Removing record from "online" table
-    sprintf(sql_query, "DELETE FROM online WHERE id = %lu", tdata->id);
+    sprintf(sql_tempquery, "DELETE FROM online WHERE id = %lu", tdata->id);
+    mysqlStringEscape(sql_query, sql_tempquery);
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
@@ -418,7 +444,8 @@ void *mysqlStatsDisconnectThread(void *input)
     pthread_mutex_unlock(&mysql_mutex);
 
     // Adding record to "stats" table
-    sprintf(sql_query, "INSERT INTO stats (ip, agent, mount, start, stop, duration) VALUES ('%s', '%s', %d, FROM_UNIXTIME(%lld), FROM_UNIXTIME(%lld), %d)", ip, agent, mount, (long long) tdata->start, (long long) tdata->stop, (int) (tdata->stop - tdata->start));
+    sprintf(sql_tempquery, "INSERT INTO stats (ip, agent, mount, start, stop, duration) VALUES ('%s', '%s', %d, FROM_UNIXTIME(%lld), FROM_UNIXTIME(%lld), %d)", ip, agent, mount, (long long) tdata->start, (long long) tdata->stop, (int) (tdata->stop - tdata->start));
+    mysqlStringEscape(sql_query, sql_tempquery);
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
