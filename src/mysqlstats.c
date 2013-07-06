@@ -171,7 +171,7 @@ void mysqlStatsDBCheck()
     char sql_query[MYSQL_QUERY_MAXLENGTH];
 
     // If doesn't exists, creates table online
-    strcpy(sql_query, "CREATE TABLE IF NOT EXISTS `online` (`id` bigint(20) unsigned NOT NULL, `ip` text(15) COLLATE utf8_bin NOT NULL, `agent` varchar(1024) COLLATE utf8_bin NOT NULL, `start` timestamp NOT NULL, `mount` bigint(20) unsigned NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;");
+    strcpy(sql_query, MYSQLSTATS_QUERY_CREATE_ONLINE);
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
@@ -193,7 +193,7 @@ void mysqlStatsDBCheck()
     pthread_mutex_unlock(&mysql_mutex);
 
     // If doesn't exists, creates table stats
-    strcpy(sql_query, "CREATE TABLE IF NOT EXISTS `stats` (`id` bigint(20) unsigned NOT NULL AUTO_INCREMENT, `ip` text(15) COLLATE utf8_bin NOT NULL, `agent` varchar(1024) COLLATE utf8_bin NOT NULL, `mount` varchar(128) COLLATE utf8_bin NOT NULL, `start` timestamp NOT NULL, `stop` timestamp NOT NULL, `duration` int(10) unsigned NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1;");
+    strcpy(sql_query, MYSQLSTATS_QUERY_CREATE_STATS);
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
@@ -204,7 +204,7 @@ void mysqlStatsDBCheck()
     pthread_mutex_unlock(&mysql_mutex);
 
     // If doesn't exists, creates table mountpoints
-    strcpy(sql_query, "CREATE TABLE IF NOT EXISTS `mountpoints` (`id` bigint(20) unsigned NOT NULL AUTO_INCREMENT, `mount` varchar(128) COLLATE utf8_bin NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1;");
+    strcpy(sql_query, MYSQLSTATS_QUERY_CREATE_MOUNTPOINTS);
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
