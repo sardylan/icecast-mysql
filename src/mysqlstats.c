@@ -185,22 +185,31 @@ void mysqlStatsDBClose()
 void *mysqlStatsDBConnectionCheck(void *input)
 {
     int mysql_return_value;
+    int retries;
+
+    retries = 0;
 
     if(mysqlstats_enabled_in_config == 1) {
-        while(1) {
-            sleep(MYSQLSTATS_DBCHECK_INTERVAL); // Sleeping some seconds
+        while(retries < MYSQLSTATS_DBCHECK_RETRY_MAX) {
+            if(mysqlstats_enabled == 1) {
+                sleep(MYSQLSTATS_DBCHECK_INTERVAL); // Sleeping some seconds
 
-            // Ping the server
-            pthread_mutex_lock(&mysql_mutex);
-            mysql_return_value = mysql_ping(mysql_connection);
-            pthread_mutex_unlock(&mysql_mutex);
+                // Ping the server
+                pthread_mutex_lock(&mysql_mutex);
+                mysql_return_value = mysql_ping(mysql_connection);
+                pthread_mutex_unlock(&mysql_mutex);
 
-            // Check the result of the ping
-            if(mysql_return_value == 0) {
-                DEBUG0("MySQL ping OK");
+                // Check the result of the ping
+                if(mysql_return_value == 0) {
+                    DEBUG0("MySQL ping OK");
+                } else {
+                    ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
+                    ERROR0("Server ping not working");
+                    mysqlstats_enabled == 0;
+                }
             } else {
-                ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
-                ERROR0("Server ping not working");
+                retries++;
+                // mysqlStatsDBOpen(); // TODO
             }
         }
     }

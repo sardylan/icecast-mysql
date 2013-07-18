@@ -19,6 +19,8 @@
 #include <mysql/mysql.h>
 
 #define MYSQLSTATS_DBCHECK_INTERVAL 10
+#define MYSQLSTATS_DBCHECK_RETRY_INTERVAL 30
+#define MYSQLSTATS_DBCHECK_RETRY_MAX 3
 
 #define MYSQLSTATS_QUERY_CREATE_ONLINE "CREATE TABLE IF NOT EXISTS `online` (`id` bigint(20) unsigned NOT NULL, `ip` text(15) COLLATE utf8_bin NOT NULL, `agent` varchar(1024) COLLATE utf8_bin NOT NULL, `start` timestamp NOT NULL, `mount` bigint(20) unsigned NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;"
 #define MYSQLSTATS_QUERY_CREATE_STATS "CREATE TABLE IF NOT EXISTS `stats` (`id` bigint(20) unsigned NOT NULL AUTO_INCREMENT, `ip` text(15) COLLATE utf8_bin NOT NULL, `agent` varchar(1024) COLLATE utf8_bin NOT NULL, `mount` varchar(128) COLLATE utf8_bin NOT NULL, `start` timestamp NOT NULL, `stop` timestamp NOT NULL, `duration` int(10) unsigned NOT NULL, PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1;"
