@@ -491,6 +491,7 @@ void *mysqlStatsDisconnectThread(void *input)
     char ip[16];
     char agent[1025];
     int mount;
+    int sql_return;
 
     // Acquiring data structure
     tdata = (mysql_stats_disconnect_thread_data *) input;
