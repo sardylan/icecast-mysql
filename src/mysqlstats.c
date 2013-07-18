@@ -3,7 +3,7 @@
  * This program is distributed under the GNU General Public License, version 2.
  * A copy of this license is included with this source.
  *
- * Copyright 2000-2004, Jack Moffitt <jack@xiph.org, 
+ * Copyright 2000-2004, Jack Moffitt <jack@xiph.org,
  *                      Michael Smith <msmith@xiph.org>,
  *                      oddsock <oddsock@xiph.org>,
  *                      Karl Heyes <karl@xiph.org>
@@ -15,6 +15,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <time.h>
 #include <string.h>
 #include <mysql/mysql.h>
@@ -31,6 +32,7 @@
 #define MYSQL_QUERY_MAXLENGTH 2048
 
 int mysqlstats_enabled;
+int mysqlstats_enabled_in_config;
 MYSQL *mysql_connection;
 pthread_mutex_t mysql_mutex;
 
@@ -75,6 +77,9 @@ int mysqlStatsDBOpen()
     MYSQL *temp_connection;
     ice_config_t *configuration;
     unsigned int mysql_timeout;
+    pthread_t thread;
+    pthread_attr_t tattr;
+    int th_ret;
 
     // Default return value
     ret = 0;
@@ -83,7 +88,7 @@ int mysqlStatsDBOpen()
     configuration = config_get_config();
 
     // Acquiring informations from config
-    mysqlstats_enabled = (int) configuration->mysql_stats_enabled;
+    mysqlstats_enabled_in_config = (int) configuration->mysql_stats_enabled;
     strcpy(mysqlstats_server, configuration->mysql_stats_server);
     mysqlstats_port = (int) configuration->mysql_stats_port;
     strcpy(mysqlstats_user, configuration->mysql_stats_user);
@@ -93,7 +98,9 @@ int mysqlStatsDBOpen()
     config_release_config();
 
     // Connecting to DB only if enabled in config file
-    if(mysqlstats_enabled == 1) {
+    if(mysqlstats_enabled_in_config == 1) {
+        // Enabling the global var
+        mysqlstats_enabled = 1;
 
         // Creating temporary connection with few seconds of timeout
         mysql_timeout = 2;
@@ -129,6 +136,15 @@ int mysqlStatsDBOpen()
         // Unlock global MySQL resource
         pthread_mutex_unlock(&mysql_mutex);
 
+        // Creating detached thread to periodically check DB connection
+        pthread_attr_init(&tattr);
+        pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
+
+        th_ret = pthread_create(&thread, &tattr, mysqlStatsDBConnectionCheck, (void *) NULL);
+
+        if(th_ret)
+            ERROR0("DB Connection Checking thread not created!!!");
+
         // Checking DB consistency
         if(ret == 0)
             mysqlStatsDBCheck();
@@ -163,56 +179,98 @@ void mysqlStatsDBClose()
 
 
 /**
+ * Periodically checking the DB connection
+ */
+
+void *mysqlStatsDBConnectionCheck(void *input)
+{
+    int mysql_return_value;
+
+    if(mysqlstats_enabled_in_config == 1) {
+        while(1) {
+            sleep(MYSQLSTATS_DBCHECK_INTERVAL); // Sleeping some seconds
+
+            // Ping the server
+            pthread_mutex_lock(&mysql_mutex);
+            mysql_return_value = mysql_ping(mysql_connection);
+            pthread_mutex_unlock(&mysql_mutex);
+
+            // Check the result of the ping
+            if(mysql_return_value == 0) {
+                DEBUG0("MySQL ping OK");
+            } else {
+                ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
+                ERROR0("Server ping not working");
+            }
+        }
+    }
+
+    // Closing thread
+    pthread_exit((void *) NULL);
+}
+
+
+
+/**
  * Checking the DB and creates tables if don't exist.
  */
 
 void mysqlStatsDBCheck()
 {
     char sql_query[MYSQL_QUERY_MAXLENGTH];
+    int sql_return;
 
     // If doesn't exists, creates table online
     strcpy(sql_query, MYSQLSTATS_QUERY_CREATE_ONLINE);
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
-    if(mysql_query(mysql_connection, sql_query) != 0) {
+    sql_return = mysql_query(mysql_connection, sql_query);
+    pthread_mutex_unlock(&mysql_mutex);
+
+    if(sql_return != 0) {
         ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
         ERROR1("SQL Query: \"%s\"", sql_query);
     }
-    pthread_mutex_unlock(&mysql_mutex);
 
     // Truncates table online
     strcpy(sql_query, "TRUNCATE TABLE `online`");
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
-    if(mysql_query(mysql_connection, sql_query) != 0) {
+    sql_return = mysql_query(mysql_connection, sql_query);
+    pthread_mutex_unlock(&mysql_mutex);
+
+    if(sql_return != 0) {
         ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
         ERROR1("SQL Query: \"%s\"", sql_query);
     }
-    pthread_mutex_unlock(&mysql_mutex);
 
     // If doesn't exists, creates table stats
     strcpy(sql_query, MYSQLSTATS_QUERY_CREATE_STATS);
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
-    if(mysql_query(mysql_connection, sql_query) != 0) {
+    sql_return = mysql_query(mysql_connection, sql_query);
+    pthread_mutex_unlock(&mysql_mutex);
+
+    if(sql_return != 0) {
         ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
         ERROR1("SQL Query: \"%s\"", sql_query);
     }
-    pthread_mutex_unlock(&mysql_mutex);
 
     // If doesn't exists, creates table mountpoints
     strcpy(sql_query, MYSQLSTATS_QUERY_CREATE_MOUNTPOINTS);
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
-    if(mysql_query(mysql_connection, sql_query) != 0) {
+    sql_return = mysql_query(mysql_connection, sql_query);
+    pthread_mutex_unlock(&mysql_mutex);
+
+    if(sql_return != 0) {
         ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
         ERROR1("SQL Query: \"%s\"", sql_query);
     }
-    pthread_mutex_unlock(&mysql_mutex);
 }
 
 
@@ -322,6 +380,7 @@ void *mysqlStatsConnectThread(void *input)
     MYSQL_RES *result;
     MYSQL_ROW row;
     int mysqlret, mountid;
+    int sql_return;
 
     // Acquiring data structure
     tdata = (mysql_stats_connect_thread_data *) input;
@@ -359,13 +418,14 @@ void *mysqlStatsConnectThread(void *input)
         DEBUG1("Executing query \"%s\"", sql_query);
 
         pthread_mutex_lock(&mysql_mutex);
+        sql_return = mysql_query(mysql_connection, sql_query);
+        pthread_mutex_unlock(&mysql_mutex);
 
-        if(mysql_query(mysql_connection, sql_query) != 0) {
+        if(sql_return != 0) {
             ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
             ERROR1("SQL Query: \"%s\"", sql_query);
         }
 
-        pthread_mutex_unlock(&mysql_mutex);
     }
 
     // Gets numerical id of mountpoint
@@ -395,11 +455,13 @@ void *mysqlStatsConnectThread(void *input)
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
-    if(mysql_query(mysql_connection, sql_query) != 0) {
+    sql_return = mysql_query(mysql_connection, sql_query);
+    pthread_mutex_unlock(&mysql_mutex);
+
+    if(sql_return != 0) {
         ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
         ERROR1("SQL Query: \"%s\"", sql_query);
     }
-    pthread_mutex_unlock(&mysql_mutex);
 
     // Free allocated memory for data structure
     // Strings are freed separately
@@ -424,7 +486,6 @@ void *mysqlStatsDisconnectThread(void *input)
     MYSQL_RES *result;
     MYSQL_ROW row;
     char sql_query[MYSQL_QUERY_MAXLENGTH];
-    char *escaped_mount;
     char *escaped_ip;
     char *escaped_agent;
     char ip[16];
@@ -463,29 +524,31 @@ void *mysqlStatsDisconnectThread(void *input)
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
-    if(mysql_query(mysql_connection, sql_query) != 0) {
+    sql_return = mysql_query(mysql_connection, sql_query);
+    pthread_mutex_unlock(&mysql_mutex);
+
+    if(sql_return != 0) {
         ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
         ERROR1("SQL Query: \"%s\"", sql_query);
     }
-    pthread_mutex_unlock(&mysql_mutex);
 
     // Adding record to "stats" table
-    escaped_mount = mysqlStringEscape(mount);
     escaped_ip = mysqlStringEscape(ip);
     escaped_agent = mysqlStringEscape(agent);
     sprintf(sql_query, "INSERT INTO stats (ip, agent, mount, start, stop, duration) VALUES ('%s', '%s', %d, FROM_UNIXTIME(%lld), FROM_UNIXTIME(%lld), %d)", ip, agent, mount, (long long) tdata->start, (long long) tdata->stop, (int) (tdata->stop - tdata->start));
-    free(escaped_mount);
     free(escaped_ip);
     free(escaped_agent);
 
     DEBUG1("Executing query \"%s\"", sql_query);
 
     pthread_mutex_lock(&mysql_mutex);
-    if(mysql_query(mysql_connection, sql_query) != 0) {
+    sql_return = mysql_query(mysql_connection, sql_query);
+    pthread_mutex_unlock(&mysql_mutex);
+
+    if(sql_return != 0) {
         ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
         ERROR1("SQL Query: \"%s\"", sql_query);
     }
-    pthread_mutex_unlock(&mysql_mutex);
 
     // Free allocated memory for data structure
     free(tdata);
