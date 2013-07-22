@@ -33,6 +33,7 @@
 
 int mysqlstats_enabled;
 int mysqlstats_enabled_in_config;
+int mysqlstats_connection_retries;
 MYSQL *mysql_connection;
 pthread_mutex_t mysql_mutex;
 
@@ -131,6 +132,8 @@ int mysqlStatsDBOpen()
             WARN2("Error connecting to DB: %u - %s", mysql_errno(temp_connection), mysql_error(temp_connection));
             mysql_close(temp_connection);
             ret = 2;
+        } else {
+            mysqlstats_connection_retries = 0; // Resetting to 0 retries counter
         }
 
         // Unlock global MySQL resource
@@ -171,7 +174,8 @@ void mysqlStatsDBClose()
 {
     if(mysqlstats_enabled == 1) {
         pthread_mutex_lock(&mysql_mutex);
-        mysql_close(mysql_connection);
+        mysql_close(mysql_connection); // Closing connection
+        mysqlstats_enabled = 0; // Disabling MySQL Stats
         pthread_mutex_unlock(&mysql_mutex);
     }
 }
@@ -185,18 +189,23 @@ void mysqlStatsDBClose()
 void *mysqlStatsDBConnectionCheck(void *input)
 {
     int mysql_return_value;
-    int retries;
 
-    retries = 0;
+    mysqlstats_connection_retries = 0;
 
     if(mysqlstats_enabled_in_config == 1) {
-        while(retries < MYSQLSTATS_DBCHECK_RETRY_MAX) {
+        while(mysqlstats_connection_retries < MYSQLSTATS_DBCHECK_RETRY_MAX) {
+            sleep(MYSQLSTATS_DBCHECK_INTERVAL); // Sleeping some seconds
+
             if(mysqlstats_enabled == 1) {
-                sleep(MYSQLSTATS_DBCHECK_INTERVAL); // Sleeping some seconds
 
                 // Ping the server
                 pthread_mutex_lock(&mysql_mutex);
-                mysql_return_value = mysql_ping(mysql_connection);
+
+                if(mysqlstats_enabled == 1) // mysqlstats_enabled can change, so we recheck
+                    mysql_return_value = mysql_ping(mysql_connection);
+                else
+                    mysql_return_value = 0;
+
                 pthread_mutex_unlock(&mysql_mutex);
 
                 // Check the result of the ping
@@ -205,11 +214,11 @@ void *mysqlStatsDBConnectionCheck(void *input)
                 } else {
                     ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
                     ERROR0("Server ping not working");
-                    mysqlstats_enabled == 0;
+                    mysqlStatsDBClose(); // If doesn't work, we close the connection to free memory.
                 }
             } else {
-                retries++;
-                // mysqlStatsDBOpen(); // TODO
+                mysqlstats_connection_retries++;
+                mysqlStatsDBOpen(); // Retring
             }
         }
     }
