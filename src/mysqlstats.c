@@ -575,6 +575,8 @@ void *mysqlStatsDisconnectThread(void *input)
 
     DEBUG1("Executing query \"%s\"", sql_query);
 
+    mount = 0; // Resolve warning: ‘mount’ may be used uninitialized in this function
+
     pthread_mutex_lock(&mysql_mutex);
 
     if(mysqlstats_enabled == 1) {
