@@ -246,7 +246,7 @@ void mysqlStatsDBCheck()
     strcpy(sql_query, MYSQLSTATS_QUERY_CREATE_ONLINE);
     DEBUG1("Executing query \"%s\"", sql_query);
 
-    sql_return = -1;
+    sql_return = 0; // Ensure that no mysql_errno or mysql_error are called if mysqlstats are not enabled
 
     pthread_mutex_lock(&mysql_mutex);
 
@@ -264,6 +264,8 @@ void mysqlStatsDBCheck()
     strcpy(sql_query, "TRUNCATE TABLE `online`");
     DEBUG1("Executing query \"%s\"", sql_query);
 
+    sql_return = 0; // Ensure that no mysql_errno or mysql_error are called if mysqlstats are not enabled
+
     pthread_mutex_lock(&mysql_mutex);
 
     if(mysqlstats_enabled == 1)
@@ -280,6 +282,8 @@ void mysqlStatsDBCheck()
     strcpy(sql_query, MYSQLSTATS_QUERY_CREATE_STATS);
     DEBUG1("Executing query \"%s\"", sql_query);
 
+    sql_return = 0; // Ensure that no mysql_errno or mysql_error are called if mysqlstats are not enabled
+
     pthread_mutex_lock(&mysql_mutex);
 
     if(mysqlstats_enabled == 1)
@@ -295,6 +299,8 @@ void mysqlStatsDBCheck()
     // If doesn't exists, creates table mountpoints
     strcpy(sql_query, MYSQLSTATS_QUERY_CREATE_MOUNTPOINTS);
     DEBUG1("Executing query \"%s\"", sql_query);
+
+    sql_return = 0; // Ensure that no mysql_errno or mysql_error are called if mysqlstats are not enabled
 
     pthread_mutex_lock(&mysql_mutex);
 
@@ -459,7 +465,7 @@ void *mysqlStatsConnectThread(void *input)
 
         DEBUG1("Executing query \"%s\"", sql_query);
 
-        sql_return = -1;
+        sql_return = 0; // Ensure that no mysql_errno or mysql_error are called if mysqlstats are not enabled
 
         pthread_mutex_lock(&mysql_mutex);
 
@@ -508,7 +514,7 @@ void *mysqlStatsConnectThread(void *input)
 
         DEBUG1("Executing query \"%s\"", sql_query);
 
-        sql_return = -1;
+        sql_return = 0; // Ensure that no mysql_errno or mysql_error are called if mysqlstats are not enabled
 
         pthread_mutex_lock(&mysql_mutex);
 
@@ -590,10 +596,10 @@ void *mysqlStatsDisconnectThread(void *input)
 
     pthread_mutex_lock(&mysql_mutex);
 
+    sql_return = 0; // Ensure that no mysql_errno or mysql_error are called if mysqlstats are not enabled
+
     if(mysqlstats_enabled == 1)
         sql_return = mysql_query(mysql_connection, sql_query);
-    else
-        sql_return = -1;
 
     pthread_mutex_unlock(&mysql_mutex);
 
@@ -611,12 +617,12 @@ void *mysqlStatsDisconnectThread(void *input)
 
     DEBUG1("Executing query \"%s\"", sql_query);
 
+    sql_return = 0; // Ensure that no mysql_errno or mysql_error are called if mysqlstats are not enabled
+
     pthread_mutex_lock(&mysql_mutex);
 
     if(mysqlstats_enabled == 1)
         sql_return = mysql_query(mysql_connection, sql_query);
-    else
-        sql_return = -1;
 
     pthread_mutex_unlock(&mysql_mutex);
 
