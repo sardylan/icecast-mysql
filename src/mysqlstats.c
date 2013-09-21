@@ -199,7 +199,7 @@ void *mysqlStatsDBConnectionCheck(void *input)
         while(mysqlstats_connection_retries < MYSQLSTATS_DBCHECK_RETRY_MAX) {
             sleep(MYSQLSTATS_DBCHECK_INTERVAL); // Sleeping some seconds
 
-            // Chacking only if Stats are enabled
+            // Checking only if Stats are enabled
             if(mysqlstats_enabled == 1) {
 
                 // Ping the server
