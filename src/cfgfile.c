@@ -225,6 +225,11 @@ void config_clear(ice_config_t *c)
     if (c->group) xmlFree(c->group);
     if (c->mimetypes_fn) xmlFree (c->mimetypes_fn);
 
+    if (c->mysql_stats_server) xmlFree (c->mysql_stats_server);
+    if (c->mysql_stats_user) xmlFree (c->mysql_stats_user);
+    if (c->mysql_stats_psw) xmlFree (c->mysql_stats_psw);
+    if (c->mysql_stats_dbname) xmlFree (c->mysql_stats_dbname);
+
     while ((c->listen_sock = config_clear_listener (c->listen_sock)))
         ;
 
