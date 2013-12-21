@@ -45,6 +45,8 @@ typedef struct mysql_stats_disconnect_thread_data_t mysql_stats_disconnect_threa
 
 char *mysqlStringEscape(const char *);
 
+void mysqlLaunchCheckThread();
+
 int mysqlStatsDBOpen();
 void mysqlStatsDBClose();
 void *mysqlStatsDBConnectionCheck(void *);

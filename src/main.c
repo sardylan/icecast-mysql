@@ -517,6 +517,7 @@ int main(int argc, char **argv)
     slave_initialize();
     auth_initialise ();
 
+    mysqlLaunchCheckThread();
     mysqlStatsDBOpen();
 
     _server_proc();

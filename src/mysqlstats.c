@@ -33,7 +33,6 @@
 
 int mysqlstats_enabled;
 int mysqlstats_enabled_in_config;
-int mysqlstats_connection_retries;
 MYSQL *mysql_connection;
 pthread_mutex_t mysql_mutex;
 
@@ -64,6 +63,42 @@ char *mysqlStringEscape(const char *input)
 }
 
 
+
+/**
+ * Creates a connection-checking thread
+ */
+
+void mysqlLaunchCheckThread()
+{
+    pthread_t thread;
+    pthread_attr_t tattr;
+    int th_ret;
+
+    mysqlstats_enabled = 0;
+
+    ice_config_t *configuration;
+
+    configuration = config_get_config();
+
+    mysqlstats_enabled_in_config = (int) configuration->mysql_stats_enabled;
+
+    config_release_config();
+
+    if(mysqlstats_enabled_in_config == 1) {
+        pthread_mutex_unlock(&mysql_mutex);
+
+        pthread_attr_init(&tattr);
+        pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
+
+        th_ret = pthread_create(&thread, &tattr, mysqlStatsDBConnectionCheck, (void *) NULL);
+
+        if(th_ret)
+            ERROR0("DB Connection Checking thread not created!!!");
+    }
+}
+
+
+
 /**
  * Creates the global DB connection
  */
@@ -82,22 +117,20 @@ int mysqlStatsDBOpen()
     pthread_attr_t tattr;
     int th_ret;
 
-    mysqlstats_enabled = 0;
-
-    ret = 0;
-
-    configuration = config_get_config();
-
-    mysqlstats_enabled_in_config = (int) configuration->mysql_stats_enabled;
-    strcpy(mysqlstats_server, configuration->mysql_stats_server);
-    mysqlstats_port = (int) configuration->mysql_stats_port;
-    strcpy(mysqlstats_user, configuration->mysql_stats_user);
-    strcpy(mysqlstats_psw, configuration->mysql_stats_psw);
-    strcpy(mysqlstats_dbname, configuration->mysql_stats_dbname);
-
-    config_release_config();
-
     if(mysqlstats_enabled_in_config == 1) {
+        configuration = config_get_config();
+
+        strcpy(mysqlstats_server, configuration->mysql_stats_server);
+        mysqlstats_port = (int) configuration->mysql_stats_port;
+        strcpy(mysqlstats_user, configuration->mysql_stats_user);
+        strcpy(mysqlstats_psw, configuration->mysql_stats_psw);
+        strcpy(mysqlstats_dbname, configuration->mysql_stats_dbname);
+
+        config_release_config();
+
+        mysqlstats_enabled = 0;
+        ret = 0;
+
         mysql_timeout = 2;
         temp_connection = mysql_init(NULL);
         mysql_options(temp_connection, MYSQL_OPT_CONNECT_TIMEOUT, (char *) &mysql_timeout);
@@ -107,44 +140,33 @@ int mysqlStatsDBOpen()
             ret = 1;
         }
 
-        INFO0("MySQL Connection data:");
-        INFO1("            Server:     %s", mysqlstats_server);
-        INFO1("            Port:       %d", mysqlstats_port);
-        INFO1("            User:       %s", mysqlstats_user);
-        INFO1("            Password:   %s", mysqlstats_psw);
-        INFO1("            DB Name:    %s", mysqlstats_dbname);
+        if(ret == 0) {
+            INFO0("MySQL Connection data:");
+            INFO1("            Server:     %s", mysqlstats_server);
+            INFO1("            Port:       %d", mysqlstats_port);
+            INFO1("            User:       %s", mysqlstats_user);
+            INFO1("            Password:   %s", mysqlstats_psw);
+            INFO1("            DB Name:    %s", mysqlstats_dbname);
 
-        pthread_mutex_lock(&mysql_mutex);
+            pthread_mutex_lock(&mysql_mutex);
 
-        mysql_connection = mysql_real_connect(temp_connection, mysqlstats_server, mysqlstats_user, mysqlstats_psw, mysqlstats_dbname, mysqlstats_port, NULL, 0);
+            mysql_connection = mysql_real_connect(temp_connection, mysqlstats_server, mysqlstats_user, mysqlstats_psw, mysqlstats_dbname, mysqlstats_port, NULL, 0);
 
-        if((ret == 0) && (mysql_connection == NULL)) {
-            WARN2("Error connecting to DB: %u - %s", mysql_errno(temp_connection), mysql_error(temp_connection));
-            mysql_close(temp_connection);
-            ret = 2;
-        } else {
-            mysqlstats_enabled = 1;
-            mysqlstats_connection_retries = 0;
+            if(mysql_connection == NULL) {
+                WARN2("Error connecting to DB: %u - %s", mysql_errno(temp_connection), mysql_error(temp_connection));
+                mysql_close(temp_connection);
+                ret = 2;
+            } else {
+                mysqlstats_enabled = 1;
+            }
+
+            pthread_mutex_unlock(&mysql_mutex);
         }
-
-        pthread_mutex_unlock(&mysql_mutex);
-
-        pthread_attr_init(&tattr);
-        pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
-
-        th_ret = pthread_create(&thread, &tattr, mysqlStatsDBConnectionCheck, (void *) NULL);
-
-        if(th_ret)
-            ERROR0("DB Connection Checking thread not created!!!");
 
         if(ret == 0)
             mysqlStatsDBCheck();
-
-    }
-
-    if(ret != 0) {
-        mysqlstats_enabled = 0; // Maybe redundant
-        WARN0("Disabling MySQL Stats");
+        else
+            WARN0("Disabling MySQL Stats");
     }
 
     return ret;
@@ -176,33 +198,26 @@ void *mysqlStatsDBConnectionCheck(void *input)
 {
     int mysql_return_value;
 
-    mysqlstats_connection_retries = 0;
+    while(1) {
+        sleep(MYSQLSTATS_DBCHECK_INTERVAL);
 
-    if(mysqlstats_enabled_in_config == 1) {
-        while(mysqlstats_connection_retries < MYSQLSTATS_DBCHECK_RETRY_MAX) {
-            sleep(MYSQLSTATS_DBCHECK_INTERVAL);
+        mysql_return_value = 0;
 
-            if(mysqlstats_enabled == 1) {
-                pthread_mutex_lock(&mysql_mutex);
+        if(mysqlstats_enabled == 1) {
+            pthread_mutex_lock(&mysql_mutex);
+            mysql_return_value = mysql_ping(mysql_connection);
+            pthread_mutex_unlock(&mysql_mutex);
 
-                if(mysqlstats_enabled == 1)
-                    mysql_return_value = mysql_ping(mysql_connection);
-                else
-                    mysql_return_value = 0;
-
-                pthread_mutex_unlock(&mysql_mutex);
-
-                if(mysql_return_value == 0) {
-                    DEBUG0("MySQL ping OK");
-                } else {
-                    ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
-                    ERROR0("Server ping not working");
-                    mysqlStatsDBClose();
-                }
+            if(mysql_return_value == 0) {
+                DEBUG0("MySQL ping OK");
             } else {
-                mysqlstats_connection_retries++;
+                ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
+                ERROR0("Server ping not working");
+                mysqlStatsDBClose();
                 mysqlStatsDBOpen();
             }
+        } else {
+            mysqlStatsDBOpen();
         }
     }
 
