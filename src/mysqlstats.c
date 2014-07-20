@@ -37,6 +37,7 @@ MYSQL *mysql_connection;
 pthread_mutex_t mysql_mutex;
 
 
+
 /**
  * Function used to escape a string
  * @param[in] input Unescaped input string
@@ -531,6 +532,8 @@ void *mysqlStatsDisconnectThread(void *input)
     char agent[1025];
     int mount;
     int sql_return;
+    int conn_exists;
+    int rows;
 
     tdata = (mysql_stats_disconnect_thread_data *) input;
 
@@ -546,59 +549,70 @@ void *mysqlStatsDisconnectThread(void *input)
     DEBUG1("Executing query \"%s\"", sql_query);
 
     mount = 0;
+    rows = 0;
+    conn_exists = 0;
 
     pthread_mutex_lock(&mysql_mutex);
 
     if(mysqlstats_enabled == 1) {
         mysql_query(mysql_connection, sql_query);
         result = mysql_store_result(mysql_connection);
-        row = mysql_fetch_row(result);
-        strcpy(ip, row[0]);
-        strcpy(agent, row[1]);
-        mount = atoi(row[2]);
+
+        rows = mysql_num_rows(result);
+
+        if(rows > 0) {
+            conn_exists = 1;
+            row = mysql_fetch_row(result);
+            strcpy(ip, row[0]);
+            strcpy(agent, row[1]);
+            mount = atoi(row[2]);
+        }
+
         mysql_free_result(result);
     }
 
     pthread_mutex_unlock(&mysql_mutex);
 
-    sprintf(sql_query, "DELETE FROM online WHERE id = %lu", tdata->id);
-    strcpy(sql_query, sql_query);
-    DEBUG1("Executing query \"%s\"", sql_query);
+    if(conn_exists > 0) {
+        sprintf(sql_query, "DELETE FROM online WHERE id = %lu", tdata->id);
 
-    pthread_mutex_lock(&mysql_mutex);
+        DEBUG1("Executing query \"%s\"", sql_query);
 
-    sql_return = 0;
+        pthread_mutex_lock(&mysql_mutex);
 
-    if(mysqlstats_enabled == 1)
-        sql_return = mysql_query(mysql_connection, sql_query);
+        sql_return = 0;
 
-    pthread_mutex_unlock(&mysql_mutex);
+        if(mysqlstats_enabled == 1)
+            sql_return = mysql_query(mysql_connection, sql_query);
 
-    if(sql_return != 0) {
-        ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
-        ERROR1("SQL Query: \"%s\"", sql_query);
-    }
+        pthread_mutex_unlock(&mysql_mutex);
 
-    escaped_ip = mysqlStringEscape(ip);
-    escaped_agent = mysqlStringEscape(agent);
-    sprintf(sql_query, "INSERT INTO stats (ip, agent, mount, start, stop, duration) VALUES ('%s', '%s', %d, FROM_UNIXTIME(%lld), FROM_UNIXTIME(%lld), %d)", ip, agent, mount, (long long) tdata->start, (long long) tdata->stop, (int) (tdata->stop - tdata->start));
-    free(escaped_ip);
-    free(escaped_agent);
+        if(sql_return != 0) {
+            ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
+            ERROR1("SQL Query: \"%s\"", sql_query);
+        } else {
+            escaped_ip = mysqlStringEscape(ip);
+            escaped_agent = mysqlStringEscape(agent);
+            sprintf(sql_query, "INSERT INTO stats (ip, agent, mount, start, stop, duration) VALUES ('%s', '%s', %d, FROM_UNIXTIME(%lld), FROM_UNIXTIME(%lld), %d)", ip, agent, mount, (long long) tdata->start, (long long) tdata->stop, (int) (tdata->stop - tdata->start));
+            free(escaped_ip);
+            free(escaped_agent);
 
-    DEBUG1("Executing query \"%s\"", sql_query);
+            DEBUG1("Executing query \"%s\"", sql_query);
 
-    sql_return = 0;
+            sql_return = 0;
 
-    pthread_mutex_lock(&mysql_mutex);
+            pthread_mutex_lock(&mysql_mutex);
 
-    if(mysqlstats_enabled == 1)
-        sql_return = mysql_query(mysql_connection, sql_query);
+            if(mysqlstats_enabled == 1)
+                sql_return = mysql_query(mysql_connection, sql_query);
 
-    pthread_mutex_unlock(&mysql_mutex);
+            pthread_mutex_unlock(&mysql_mutex);
 
-    if(sql_return != 0) {
-        ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
-        ERROR1("SQL Query: \"%s\"", sql_query);
+            if(sql_return != 0) {
+                ERROR2("Error %u: %s", mysql_errno(mysql_connection), mysql_error(mysql_connection));
+                ERROR1("SQL Query: \"%s\"", sql_query);
+            }
+        }
     }
 
     free(tdata);
